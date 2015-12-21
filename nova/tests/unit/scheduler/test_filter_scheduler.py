@@ -38,6 +38,7 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
 
     driver_cls = filter_scheduler.FilterScheduler
 
+    @mock.patch('nova.scheduler.host_manager.HostState.consume_from_request')
     @mock.patch('nova.objects.ServiceList.get_by_binary',
                 return_value=fakes.SERVICES)
     @mock.patch('nova.objects.InstanceList.get_by_host')
@@ -47,7 +48,8 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
                 return_value={'numa_topology': None,
                               'pci_requests': None})
     def test_schedule_happy_day(self, mock_get_extra, mock_get_all,
-                                mock_by_host, mock_get_by_binary):
+                                mock_by_host, mock_get_by_binary,
+                                mock_consume_from_req):
         """Make sure there's nothing glaringly wrong with _schedule()
         by doing a happy day pass through.
         """
@@ -111,6 +113,7 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
 
         self.assertEqual({'vcpu': 5}, host_state.limits)
 
+    @mock.patch('nova.scheduler.host_manager.HostState.consume_from_request')
     @mock.patch('nova.objects.ServiceList.get_by_binary',
                 return_value=fakes.SERVICES)
     @mock.patch('nova.objects.InstanceList.get_by_host')
@@ -120,7 +123,8 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
                 return_value={'numa_topology': None,
                               'pci_requests': None})
     def test_schedule_host_pool(self, mock_get_extra, mock_get_all,
-                                mock_by_host, mock_get_by_binary):
+                                mock_by_host, mock_get_by_binary,
+                                mock_consume_from_req):
         """Make sure the scheduler_host_subset_size property works properly."""
 
         self.flags(scheduler_host_subset_size=2)
@@ -146,6 +150,7 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
         # one host should be chosen
         self.assertEqual(len(hosts), 1)
 
+    @mock.patch('nova.scheduler.host_manager.HostState.consume_from_request')
     @mock.patch('nova.objects.ServiceList.get_by_binary',
                 return_value=fakes.SERVICES)
     @mock.patch('nova.objects.InstanceList.get_by_host')
@@ -155,7 +160,8 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
                 return_value={'numa_topology': None,
                               'pci_requests': None})
     def test_schedule_large_host_pool(self, mock_get_extra, mock_get_all,
-                                      mock_by_host, mock_get_by_binary):
+                                      mock_by_host, mock_get_by_binary,
+                                      mock_consume_from_req):
         """Hosts should still be chosen if pool size
         is larger than number of filtered hosts.
         """
@@ -183,6 +189,7 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
         # one host should be chosen
         self.assertEqual(len(hosts), 1)
 
+    @mock.patch('nova.scheduler.host_manager.HostState.consume_from_request')
     @mock.patch('nova.scheduler.host_manager.HostManager._get_instance_info')
     @mock.patch('nova.objects.ServiceList.get_by_binary',
                 return_value=fakes.SERVICES)
@@ -193,7 +200,8 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
                               'pci_requests': None})
     def test_schedule_chooses_best_host(self, mock_get_extra, mock_cn_get_all,
                                         mock_get_by_binary,
-                                        mock_get_inst_info):
+                                        mock_get_inst_info,
+                                        mock_consume_from_req):
         """If scheduler_host_subset_size is 1, the largest host with greatest
         weight should be returned.
         """
@@ -232,6 +240,60 @@ class FilterSchedulerTestCase(test_scheduler.SchedulerTestCase):
         self.assertEqual(1, len(hosts))
 
         self.assertEqual(50, hosts[0].weight)
+
+    @mock.patch('nova.objects.ServiceList.get_by_binary',
+                return_value=fakes.SERVICES)
+    @mock.patch('nova.objects.InstanceList.get_by_host')
+    @mock.patch('nova.objects.ComputeNodeList.get_all',
+                return_value=fakes.COMPUTE_NODES)
+    @mock.patch('nova.db.instance_extra_get_by_instance_uuid',
+                return_value={'numa_topology': None,
+                              'pci_requests': None})
+    def test_schedule_with_failed_consumption(self,
+                                              mock_get_extra,
+                                              mock_cn_get_all,
+                                              mock_get_by_binary,
+                                              mock_get_inst_info):
+        """Make sure that scheduler will choose an appropriate host even if the
+        claim of the best one failed.
+        """
+
+        # attach side effect to the best weighed host's consume_from_request()
+        def _fake_get_filtered_hosts(hosts, filter_properties, index):
+            hosts = list(hosts)
+            for host in hosts:
+                if host.hypervisor_hostname == "node4":
+                    host.consume_from_request = mock.MagicMock(side_effect=
+                            exception.ComputeResourcesUnavailable(
+                                reason="I don't want this host."))
+                else:
+                    host.consume_from_request = mock.MagicMock()
+            return hosts
+
+        self.flags(scheduler_host_subset_size=1)
+        self.stubs.Set(self.driver.host_manager, 'get_filtered_hosts',
+                _fake_get_filtered_hosts)
+
+        spec_obj = objects.RequestSpec(
+            num_instances=1,
+            project_id=1,
+            os_type='Linux',
+            uuid='fake-uuid',
+            flavor=objects.Flavor(root_gb=512,
+                                  memory_mb=512,
+                                  ephemeral_gb=0,
+                                  vcpus=1),
+            pci_requests=None,
+            numa_topology=None,
+            instance_group=None)
+        self.mox.ReplayAll()
+
+        hosts = self.driver._schedule(self.context, spec_obj)
+
+        # The consumption of the best node4 will fail thus the second best
+        # node3 should be selected.
+        self.assertEqual(len(hosts), 1)
+        self.assertEqual("node3", hosts[0].obj.hypervisor_hostname)
 
     @mock.patch('nova.objects.ServiceList.get_by_binary',
                 return_value=fakes.SERVICES)

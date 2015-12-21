@@ -122,18 +122,13 @@ class FilterScheduler(driver.Scheduler):
 
             LOG.debug("Weighed %(hosts)s", {'hosts': weighed_hosts})
 
-            scheduler_host_subset_size = max(1,
-                                             CONF.scheduler_host_subset_size)
-            if scheduler_host_subset_size < len(weighed_hosts):
-                weighed_hosts = weighed_hosts[0:scheduler_host_subset_size]
-            chosen_host = random.choice(weighed_hosts)
-
-            LOG.debug("Selected host: %(host)s", {'host': chosen_host})
+            chosen_host = self._select_host(spec_obj, weighed_hosts)
+            if not chosen_host:
+                # Can't get any host locally, use the same logic with the empty
+                # get_filtered_hosts(...).
+                break
             selected_hosts.append(chosen_host)
 
-            # Now consume the resources so the filter/weights
-            # will change for the next instance.
-            chosen_host.obj.consume_from_request(spec_obj)
             if spec_obj.instance_group is not None:
                 spec_obj.instance_group.hosts.append(chosen_host.obj.host)
                 # hosts has to be not part of the updates when saving
@@ -143,3 +138,32 @@ class FilterScheduler(driver.Scheduler):
     def _get_all_host_states(self, context):
         """Template method, so a subclass can implement caching."""
         return self.host_manager.get_all_host_states(context)
+
+    def _select_host(self, spec_obj, weighed_hosts):
+        """Choose the appropriate host according to weighed hosts."""
+        scheduler_host_subset_size = max(1, CONF.scheduler_host_subset_size)
+
+        while len(weighed_hosts) > 0:
+            # NOTE(Yingxin): This needs to be applied each time to ensure lower
+            # weight hosts get pulled in after a removal.
+            if scheduler_host_subset_size < len(weighed_hosts):
+                chosen_host = random.choice(
+                        weighed_hosts[0:scheduler_host_subset_size])
+            else:
+                chosen_host = random.choice(weighed_hosts)
+
+            # Now consume the resources so the filter/weights
+            # will change for the next instance.
+            try:
+                chosen_host.obj.consume_from_request(spec_obj)
+            except exception.ComputeResourcesUnavailable as e:
+                LOG.debug("Remove host: %(host)s because of consumption"
+                        "failure %(failure)s.",
+                        {'host': chosen_host, 'failure': e})
+                weighed_hosts.remove(chosen_host)
+            else:
+                LOG.debug("Selected host: %(host)s", {'host': chosen_host})
+                return chosen_host
+
+        LOG.debug("No host available to match request %s!", spec_obj)
+        return None

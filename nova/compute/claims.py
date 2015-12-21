@@ -73,6 +73,11 @@ class Claim(NopClaim):
     This information will be used to help keep the local compute hosts's
     ComputeNode model in sync to aid the scheduler in making efficient / more
     correct decisions with respect to host selection.
+
+    WARNING: This claim is now a verbatim copy of the code from
+    scheduler/claims.
+
+    TODO(Yingxin): Refactor claim code to eliminate replication.
     """
 
     def __init__(self, context, instance, tracker, resources, overhead=None,

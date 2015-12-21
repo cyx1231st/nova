@@ -1332,14 +1332,17 @@ def numa_usage_from_instances(host, instances, free=False):
 
 # TODO(ndipanov): Remove when all code paths are using objects
 def instance_topology_from_instance(instance):
-    """Convenience method for getting the numa_topology out of instances
+    """Convenience method for getting the numa_topology out of instances or
+    request_spec
 
-    Since we may get an Instance as either a dict, a db object, or an actual
-    Instance object, this makes sure we get beck either None, or an instance
-    of objects.InstanceNUMATopology class.
+    Since we may get an Instance as either a dict, a db object, an actual
+    Instance object, or a RequestSpec object, this makes sure we get back
+    either None, or an instance of objects.InstanceNUMATopology class.
     """
     if isinstance(instance, obj_instance.Instance):
         # NOTE (ndipanov): This may cause a lazy-load of the attribute
+        instance_numa_topology = instance.numa_topology
+    elif isinstance(instance, objects.RequestSpec):
         instance_numa_topology = instance.numa_topology
     else:
         if 'numa_topology' in instance:
@@ -1430,7 +1433,8 @@ def get_host_numa_usage_from_instance(host, instance, free=False,
     Handles all the complexity without polluting the class method with it.
 
     :param host: nova.objects.ComputeNode instance, or a db object or dict
-    :param instance: nova.objects.Instance instance, or a db object or dict
+    :param instance: nova.objects.Instance instance, or a db object or dict or
+                 nova.objects.RequestSpec instance
     :param free: if True the returned topology will have it's usage
                  decreased instead.
     :param never_serialize_result: if True result will always be an instance of
