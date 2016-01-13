@@ -1,0 +1,118 @@
+# Copyright (c) 2016 OpenStack Foundation
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+from oslo_log import log as logging
+import oslo_messaging as messaging
+from oslo_service import periodic_task
+
+from nova.compute import rpcapi as compute_rpcapi
+from nova.i18n import _LI, _LE, _LW
+from nova import objects
+from nova import servicegroup
+
+LOG = logging.getLogger(__name__)
+
+
+class APIProxy(object):
+    def __init__(self, host):
+        self.host = host
+        self.servicegroup_api = servicegroup.API()
+        self.compute_rpcapi = compute_rpcapi.ComputeAPI()
+
+    def service_is_up(self, service):
+        return self.servicegroup_api.service_is_up(service)
+
+
+class SchedulerClients(object):
+    def __init__(self, context, host):
+        self.ready = False
+
+        self.context = context
+        self.host = host
+        self.api = APIProxy(host)
+
+        self.clients = {}
+        self._scan_clients(self.context)
+
+        self.ready = True
+
+    def _scan_clients(self, context):
+        service_refs = {service.host: service
+                        for service in objects.ServiceList.get_by_binary(
+                            context, 'nova-compute')}
+        service_keys_db = service_refs.keys()
+        service_keys_cache = self.clients.keys()
+
+        new_keys = service_keys_db - service_keys_cache
+        old_keys = service_keys_cache - service_keys_db
+
+        for new_key in new_keys:
+            client_obj = SchedulerClient(service_refs[new_key],
+                                         self.api)
+            self.clients[new_key] = client_obj
+            LOG.INFO(_LI("Added new client: %s") % new_key)
+
+        for old_key in old_keys:
+            LOG.INFO(_LI("Remove client: %s") % old_key)
+            del self.clients[old_key]
+
+        for client in self.clients.values():
+            client.sync()
+        
+    @periodic_task.periodic_task
+    def _refresh_clients(self):
+        if self.ready:
+            self._scan_clients(self.context)
+
+
+class SchedulerClient(object):
+    def __init__(self, service, api):
+        self.host = service.host
+        self.api = api
+        self.service = service
+        self.host_state = None
+
+    def sync(self, service):
+        if not self.disabled:
+            return True
+
+        service = self.service
+        if not service['disabled'] and \
+                self.api.service_is_up(service):
+            try:
+                # TODO(): get host state
+                # self.host_state = self.compute_rpcapi.
+                #        report_host_state(client, server)
+                self.host_state = None
+                if not self.host_state:
+                    LOG.warning(_LW("Host %s seems not ready yet.")
+                                % self.host)
+                else:
+                    LOG.info(_LI("Client %s is ready!") % self.host)
+            except messaging.MessagingTimeout:
+                LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
+                self.disable()
+        else:
+            LOG.warn(_LW("Service nova-compute %d seems down!") % self.host)
+            self.disable()
+
+        return not self.disabled
+
+    @property
+    def disabled(self):
+        return self.host_state is None
+
+    def disable(self):
+        self.host_state = None

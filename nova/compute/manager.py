@@ -90,6 +90,7 @@ from nova import paths
 from nova import rpc
 from nova import safe_utils
 from nova.scheduler import client as scheduler_client
+from nova.scheduler import scheduler_server
 from nova import utils
 from nova.virt import block_device as driver_block_device
 from nova.virt import configdrive
@@ -714,6 +715,8 @@ class ComputeManager(manager.Manager):
         else:
             self._live_migration_semaphore = compute_utils.UnlimitedSemaphore()
 
+        self.scheduler_servers = scheduler_server.SchedulerServers()
+
         super(ComputeManager, self).__init__(service_name="compute",
                                              *args, **kwargs)
 
@@ -739,7 +742,8 @@ class ComputeManager(manager.Manager):
 
             rt = resource_tracker.ResourceTracker(self.host,
                                                   self.driver,
-                                                  nodename)
+                                                  nodename,
+                                                  self.scheduler_servers)
             self._resource_tracker_dict[nodename] = rt
         return rt
 
