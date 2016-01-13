@@ -715,10 +715,10 @@ class ComputeManager(manager.Manager):
         else:
             self._live_migration_semaphore = compute_utils.UnlimitedSemaphore()
 
-        self.scheduler_servers = scheduler_server.SchedulerServers()
-
         super(ComputeManager, self).__init__(service_name="compute",
                                              *args, **kwargs)
+
+        self.scheduler_servers = scheduler_server.SchedulerServers(self.host)
 
         # NOTE(russellb) Load the driver last.  It may call back into the
         # compute manager via the virtapi, so we want it to be fully
