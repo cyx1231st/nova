@@ -111,11 +111,11 @@ class SchedulerServer(object):
     def _handle_seems_disabled(self):
         if self.queue:
             if self.seems_disabled:
-                LOG.warn(_LW("Service nova-scheduler %s seems down!")
+                LOG.warning(_LW("Service nova-scheduler %s seems down!")
                         % self.host)
                 self.disable()
             else:
-                LOG.warn(_LW("Service nova-scheduler %s is disabled!")
+                LOG.warning(_LW("Service nova-scheduler %s is disabled!")
                         % self.host)
                 self.seems_disabled = True
         else:
@@ -123,10 +123,11 @@ class SchedulerServer(object):
 
     def sync(self, context, service):
         if not service:
-            LOG.warn(_LW("No db entry of nova-scheduler %s!") % self.host)
+            LOG.warning(_LW("No db entry of nova-scheduler %s!") % self.host)
             self._handle_seems_disabled()
         elif service['disabled']:
-            LOG.warn(_LW("Service nova-scheduler %s is disabled!") % self.host)
+            LOG.warning(_LW("Service nova-scheduler %s is disabled!")
+                        % self.host)
             self.disable()
         elif self.api.service_is_up(service):
             self.seems_disabled = False
@@ -136,6 +137,7 @@ class SchedulerServer(object):
             self._handle_seems_disabled()
 
     def refresh_state(self):
+        LOG.info(_LI("scheduler %s is refreshed!") % self.host)
         self.seems_disabled = False
         self.queue = 1
 

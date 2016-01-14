@@ -52,7 +52,7 @@ class HostState(base.NovaObject):
 
     @classmethod
     def from_primitives(cls, context, compute):
-        micro_version = random.randint()
+        micro_version = random.randint(0, 1000000)
         state = cls(context, micro_version=micro_version)
         state._from_compute(compute)
         return state
