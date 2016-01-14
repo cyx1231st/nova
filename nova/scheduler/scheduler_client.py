@@ -15,7 +15,6 @@
 
 from oslo_log import log as logging
 import oslo_messaging as messaging
-from oslo_service import periodic_task
 
 from nova.compute import rpcapi as compute_rpcapi
 from nova.i18n import _LI, _LE, _LW
@@ -33,6 +32,9 @@ class APIProxy(object):
 
     def service_is_up(self, service):
         return self.servicegroup_api.service_is_up(service)
+
+    def report_host_state(self, context, client):
+        return self.compute_rpcapi.report_host_state(context, client, self.host)
 
 
 class SchedulerClients(object):
@@ -67,19 +69,20 @@ class SchedulerClients(object):
             del self.clients[old_key]
 
         for client in self.clients.values():
-            client.sync()
+            client.sync(context)
         
     def periodically_refresh_clients(self, context):
         if self.ready:
             self._scan_clients(context)
 
     def notify_scheduler(self, context, host_name):
+        LOG.info(_LI("Get notified from host %s") % host_name)
         self._scan_clients(context)
         if host_name not in self.clients:
             LOG.error(_LW("Cannot find the host %s during notifying!") %
                     host_name)
             return
-        self.clients[host_name].sync()
+        self.clients[host_name].sync(context)
 
 
 class SchedulerClient(object):
@@ -89,7 +92,7 @@ class SchedulerClient(object):
         self.service = service
         self.host_state = None
 
-    def sync(self):
+    def sync(self, context):
         if not self.disabled:
             return True
 
@@ -97,10 +100,8 @@ class SchedulerClient(object):
         if not service['disabled'] and \
                 self.api.service_is_up(service):
             try:
-                # TODO(): get host state
-                # self.host_state = self.compute_rpcapi.
-                #        report_host_state(client, server)
-                self.host_state = None
+                self.host_state = self.api.report_host_state(context,
+                        self.host)
                 if not self.host_state:
                     LOG.warning(_LW("Host %s seems not ready yet.")
                                 % self.host)

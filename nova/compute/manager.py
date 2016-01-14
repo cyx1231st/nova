@@ -6666,3 +6666,6 @@ class ComputeManager(manager.Manager):
         image_meta = utils.get_image_from_system_metadata(
             instance.system_metadata)
         self.driver.unquiesce(context, instance, image_meta)
+
+    def report_host_state(self, client, server):
+        return self.scheduler_servers.report_host_state(client, server)

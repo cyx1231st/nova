@@ -40,7 +40,7 @@ class SchedulerServers(object):
             pass
 
     def report_host_state(self, client, server):
-        if server != self.host:
+        if client != self.host:
             LOG.error(_LE("Message sent to a wrong host"
                           "%(actual)s, expected %(expected)s!"),
                       {'actual': self.host, 'expected': client})
@@ -52,6 +52,7 @@ class SchedulerServers(object):
         if server not in self.servers:
             server_obj = SchedulerServer()
             self.servers[server] = server_obj
+            LOG.info(_LI("Added new scheduler server %s.") % server)
         else:
             server_obj = self.servers[server]
 
