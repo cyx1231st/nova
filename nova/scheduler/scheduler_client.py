@@ -69,34 +69,32 @@ class SchedulerClients(object):
             del self.clients[old_key]
 
         for client in self.clients.values():
-            client.sync(context)
+            client.sync(context, service_refs[client.host])
         
     def periodically_refresh_clients(self, context):
         if self.ready:
             self._scan_clients(context)
 
     def notify_scheduler(self, context, host_name):
+        # TODO(Yingxin) this has no effect when compute service is still
+        # disabled after started.
         LOG.info(_LI("Get notified from host %s") % host_name)
         self._scan_clients(context)
         if host_name not in self.clients:
             LOG.error(_LW("Cannot find the host %s during notifying!") %
                     host_name)
             return
-        self.clients[host_name].sync(context)
-
 
 class SchedulerClient(object):
     def __init__(self, service, api):
         self.host = service.host
         self.api = api
-        self.service = service
         self.host_state = None
 
-    def sync(self, context):
+    def sync(self, context, service):
         if not self.disabled:
             return True
 
-        service = self.service
         if not service['disabled'] and \
                 self.api.service_is_up(service):
             try:

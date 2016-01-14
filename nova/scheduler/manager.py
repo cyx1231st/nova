@@ -59,6 +59,9 @@ class SchedulerManager(manager.Manager):
         self.driver.run_periodic_tasks(context)
         self.clients.periodically_refresh_clients(context)
 
+    def pre_start_hook(self):
+        self.clients.periodically_refresh_clients(nova.context.get_admin_context())
+
     @messaging.expected_exceptions(exception.NoValidHost)
     def select_destinations(self, context, request_spec, filter_properties):
         """Returns destinations(s) best suited for this request_spec and

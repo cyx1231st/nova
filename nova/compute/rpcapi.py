@@ -1001,5 +1001,5 @@ class ComputeAPI(object):
         cctxt = self.client.prepare(server=compute,
                    version=version)
         return cctxt.call(ctxt, 'report_host_state',
-                   compute=compute,
+                   compute_node=compute,
                    scheduler=scheduler)
