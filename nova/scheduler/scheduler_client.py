@@ -79,11 +79,9 @@ class SchedulerClients(object):
         # TODO(Yingxin) this has no effect when compute service is still
         # disabled after started.
         LOG.info(_LI("Get notified from host %s") % host_name)
-        self._scan_clients(context)
-        if host_name not in self.clients:
-            LOG.error(_LW("Cannot find the host %s during notifying!") %
-                    host_name)
-            return
+        client_obj = self.clients.get(host_name, None)
+        if client_obj:
+            client_obj.refresh_state(context)
 
 class SchedulerClient(object):
     def __init__(self, service, api):
@@ -97,23 +95,24 @@ class SchedulerClient(object):
 
         if not service['disabled'] and \
                 self.api.service_is_up(service):
-            try:
-                self.host_state = self.api.report_host_state(context,
-                        self.host)
-                if not self.host_state:
-                    LOG.warning(_LW("Host %s seems not ready yet.")
-                                % self.host)
-                else:
-                    LOG.info(_LI("Client %s is ready!") % self.host)
-                    LOG.info(_LI("Host state: %s.") % self.host_state)
-            except messaging.MessagingTimeout:
-                LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
-                self.disable()
+            self.refresh_state(context)
         else:
             LOG.warn(_LW("Service nova-compute %s seems down!") % self.host)
             self.disable()
 
         return not self.disabled
+
+    def refresh_state(self, context):
+        try:
+            self.host_state = self.api.report_host_state(context, self.host)
+            if not self.host_state:
+                LOG.warning(_LW("Host %s seems not ready yet.") % self.host)
+            else:
+                LOG.info(_LI("Client %s is ready!") % self.host)
+                LOG.info(_LI("Host state: %s.") % self.host_state)
+        except messaging.MessagingTimeout:
+            LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
+            self.disable()
 
     @property
     def disabled(self):
