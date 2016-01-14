@@ -17,7 +17,7 @@ from oslo_log import log as logging
 import oslo_messaging as messaging
 
 from nova.compute import rpcapi as compute_rpcapi
-from nova.i18n import _LI, _LE, _LW
+from nova.i18n import _LI, _LE
 from nova import objects
 from nova import servicegroup
 
@@ -75,9 +75,9 @@ class SchedulerClients(object):
         if not client_obj:
             client_obj = SchedulerClient(host_name, self.api)
             self.clients[host_name] = client_obj
-            LOG.warning(_LW("Added temp client %s from notification.")
+            LOG.info(_LI("Added temp client %s from notification.")
                         % host_name)
-        client_obj.refresh_state(context)
+        client_obj.refresh_state(context, True)
 
 
 class SchedulerClient(object):
@@ -85,30 +85,31 @@ class SchedulerClient(object):
         self.host = host
         self.api = api
         self.host_state = None
-        self.seems_disabled = True
+        self.tmp = False
 
-    def _handle_seems_disabled(self):
+    def _handle_tmp(self):
         if self.host_state:
-            if self.seems_disabled:
-                LOG.warn(_LW("Service nova-compute %s is down!")
-                         % self.host)
-                self.disable()
+            if self.tmp:
+                LOG.info(_LI("Keep service nova-compute %s!")
+                        % self.host)
+                self.tmp = False
             else:
-                LOG.warn(_LW("Service nova-compute %s seems down!")
-                         % self.host)
-                self.seems_disabled = True
+                LOG.info(_LI("Service nova-compute %s is disabled!")
+                        % self.host)
+                self.disable()
         else:
-            self.disable()
+            self.tmp = False
 
     def sync(self, context, service):
         if not service:
-            LOG.warn(_LW("No db entry of nova-compute %s!") % self.host)
-            self._handle_seems_disabled()
+            LOG.info(_LI("No db entry of nova-compute %s!") % self.host)
+            self._handle_tmp()
         elif service['disabled']:
-            LOG.warn(_LW("Service nova-compute %s is disabled!") % self.host)
+            LOG.info(_LI("Service nova-compute %s is disabled!")
+                        % self.host)
             self.disable()
         elif self.api.service_is_up(service):
-            self.seems_disabled = False
+            self.tmp = False
             if not self.host_state:
                 self.refresh_state(context)
             else:
@@ -116,21 +117,22 @@ class SchedulerClient(object):
                 pass
         else:
             # is down in db
-            self._handle_seems_disabled()
+            self._handle_tmp()
 
-    def refresh_state(self, context):
+    def refresh_state(self, context, tmp=False):
         try:
             self.host_state = self.api.report_host_state(context, self.host)
             if not self.host_state:
-                LOG.error(_LW("Host %s is not ready yet.") % self.host)
+                LOG.error(_LE("Host %s is not ready yet.") % self.host)
                 self.disable()
             else:
                 LOG.info(_LI("Client %s is ready!") % self.host)
                 LOG.info(_LI("Host state: %s.") % self.host_state)
+                self.tmp = tmp
         except messaging.MessagingTimeout:
             LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
             self.disable()
 
     def disable(self):
         self.host_state = None
-        self.seems_disabled = True
+        self.tmp = False

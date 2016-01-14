@@ -71,7 +71,7 @@ class SchedulerServers(object):
         if not server_obj:
             server_obj = SchedulerServer(scheduler, self.api)
             self.servers[scheduler] = server_obj
-            LOG.warning(_LW("Added temp server %s from report.") % scheduler)
+            LOG.info(_LW("Added temp server %s from report.") % scheduler)
 
         server_obj.refresh_state()
         return self.host_state
@@ -104,33 +104,33 @@ class SchedulerServers(object):
 class SchedulerServer(object):
     def __init__(self, host, api):
         self.host = host
-        self.seems_disabled = True
         self.queue = None
         self.api = api
+        self.tmp = False
 
     def _handle_seems_disabled(self):
         if self.queue:
-            if self.seems_disabled:
-                LOG.warning(_LW("Service nova-scheduler %s seems down!")
-                        % self.host)
-                self.disable()
+            if self.tmp:
+                LOG.info(_LI("Keep service nova-scheduler %s!")
+                         % self.host)
+                self.tmp = False
             else:
-                LOG.warning(_LW("Service nova-scheduler %s is disabled!")
-                        % self.host)
-                self.seems_disabled = True
+                LOG.info(_LI("Service nova-scheduler %s is disabled!")
+                         % self.host)
+                self.disable()
         else:
-            self.disable()
+            self.tmp = False
 
     def sync(self, context, service):
         if not service:
-            LOG.warning(_LW("No db entry of nova-scheduler %s!") % self.host)
+            LOG.info(_LI("No db entry of nova-scheduler %s!") % self.host)
             self._handle_seems_disabled()
         elif service['disabled']:
-            LOG.warning(_LW("Service nova-scheduler %s is disabled!")
+            LOG.info(_LI("Service nova-scheduler %s is disabled!")
                         % self.host)
             self.disable()
         elif self.api.service_is_up(service):
-            self.seems_disabled = False
+            self.tmp = False
             if not self.queue:
                 self.api.notify_scheduler(context, self.host)
         else:
@@ -138,9 +138,9 @@ class SchedulerServer(object):
 
     def refresh_state(self):
         LOG.info(_LI("scheduler %s is refreshed!") % self.host)
-        self.seems_disabled = False
+        self.tmp = True
         self.queue = 1
 
     def disable(self):
         self.queue = None
-        self.seems_disabled = True
+        self.tmp = False
