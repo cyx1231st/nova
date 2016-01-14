@@ -996,10 +996,10 @@ class ComputeAPI(object):
                 version=version)
         return cctxt.cast(ctxt, "trigger_crash_dump", instance=instance)
 
-    def report_host_state(self, ctxt, client, server):
+    def report_host_state(self, ctxt, compute, scheduler):
         version = '4.0'
-        cctxt = self.client.prepare(server=client,
+        cctxt = self.client.prepare(server=compute,
                    version=version)
         return cctxt.call(ctxt, 'report_host_state',
-                   client=client,
-                   server=server)
+                   compute=compute,
+                   scheduler=scheduler)

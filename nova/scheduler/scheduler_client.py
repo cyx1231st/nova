@@ -33,8 +33,8 @@ class APIProxy(object):
     def service_is_up(self, service):
         return self.servicegroup_api.service_is_up(service)
 
-    def report_host_state(self, context, client):
-        return self.compute_rpcapi.report_host_state(context, client, self.host)
+    def report_host_state(self, context, compute):
+        return self.compute_rpcapi.report_host_state(context, compute, self.host)
 
 
 class SchedulerClients(object):
@@ -107,6 +107,7 @@ class SchedulerClient(object):
                                 % self.host)
                 else:
                     LOG.info(_LI("Client %s is ready!") % self.host)
+                    LOG.info(_LI("Host state: %s.") % self.host_state)
             except messaging.MessagingTimeout:
                 LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
                 self.disable()

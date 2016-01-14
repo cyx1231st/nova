@@ -39,22 +39,22 @@ class SchedulerServers(object):
             # TODO() incremental update
             pass
 
-    def report_host_state(self, client, server):
-        if client != self.host:
+    def report_host_state(self, compute, scheduler):
+        if compute != self.host:
             LOG.error(_LE("Message sent to a wrong host"
                           "%(actual)s, expected %(expected)s!"),
-                      {'actual': self.host, 'expected': client})
+                      {'actual': self.host, 'expected': compute})
             return
         elif self.disabled:
             LOG.warning(_LW("The host %s isn't ready yet!") % self.host)
             return
 
-        if server not in self.servers:
+        if scheduler not in self.servers:
             server_obj = SchedulerServer()
-            self.servers[server] = server_obj
-            LOG.info(_LI("Added new scheduler server %s.") % server)
+            self.servers[scheduler] = server_obj
+            LOG.info(_LI("Added new scheduler server %s.") % scheduler)
         else:
-            server_obj = self.servers[server]
+            server_obj = self.servers[scheduler]
 
         server_obj.refresh_state()
         return self.host_state

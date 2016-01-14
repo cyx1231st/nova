@@ -6667,5 +6667,5 @@ class ComputeManager(manager.Manager):
             instance.system_metadata)
         self.driver.unquiesce(context, instance, image_meta)
 
-    def report_host_state(self, client, server):
-        return self.scheduler_servers.report_host_state(client, server)
+    def report_host_state(self, compute, scheduler):
+        return self.scheduler_servers.report_host_state(compute, scheduler)
