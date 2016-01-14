@@ -34,21 +34,17 @@ class APIProxy(object):
         return self.servicegroup_api.service_is_up(service)
 
     def report_host_state(self, context, compute):
-        return self.compute_rpcapi.report_host_state(context, compute, self.host)
+        return self.compute_rpcapi.report_host_state(
+                context, compute, self.host)
 
 
 class SchedulerClients(object):
     def __init__(self, host):
-        self.ready = False
-
         self.host = host
         self.api = APIProxy(host)
-
         self.clients = {}
 
-        self.ready = True
-
-    def _scan_clients(self, context):
+    def periodically_refresh_clients(self, context):
         service_refs = {service.host: service
                         for service in objects.ServiceList.get_by_binary(
                             context, 'nova-compute')}
@@ -59,54 +55,75 @@ class SchedulerClients(object):
         old_keys = service_keys_cache - service_keys_db
 
         for new_key in new_keys:
-            client_obj = SchedulerClient(service_refs[new_key],
+            client_obj = SchedulerClient(service_refs[new_key].host,
                                          self.api)
             self.clients[new_key] = client_obj
             LOG.info(_LI("Added new client: %s") % new_key)
 
         for old_key in old_keys:
-            LOG.info(_LI("Remove client: %s") % old_key)
-            del self.clients[old_key]
+            client_obj = self.clients[old_key]
+            if not client_obj.host_state:
+                LOG.error(_LE("Remove client: %s") % old_key)
+                del self.clients[old_key]
 
         for client in self.clients.values():
-            client.sync(context, service_refs[client.host])
-        
-    def periodically_refresh_clients(self, context):
-        if self.ready:
-            self._scan_clients(context)
+            client.sync(context, service_refs.get(client.host, None))
 
     def notify_scheduler(self, context, host_name):
-        # TODO(Yingxin) this has no effect when compute service is still
-        # disabled after started.
         LOG.info(_LI("Get notified from host %s") % host_name)
         client_obj = self.clients.get(host_name, None)
-        if client_obj:
-            client_obj.refresh_state(context)
+        if not client_obj:
+            client_obj = SchedulerClient(host_name, self.api)
+            self.clients[host_name] = client_obj
+            LOG.warning(_LW("Added temp client %s from notification.")
+                        % host_name)
+        client_obj.refresh_state(context)
+
 
 class SchedulerClient(object):
-    def __init__(self, service, api):
-        self.host = service.host
+    def __init__(self, host, api):
+        self.host = host
         self.api = api
         self.host_state = None
+        self.seems_disabled = True
 
-    def sync(self, context, service):
-        if not self.disabled:
-            return True
-
-        if not service['disabled'] and \
-                self.api.service_is_up(service):
-            self.refresh_state(context)
+    def _handle_seems_disabled(self):
+        if self.host_state:
+            if self.seems_disabled:
+                LOG.warn(_LW("Service nova-compute %s is down!")
+                         % self.host)
+                self.disable()
+            else:
+                LOG.warn(_LW("Service nova-compute %s seems down!")
+                         % self.host)
+                self.seems_disabled = True
         else:
-            LOG.warn(_LW("Service nova-compute %s seems down!") % self.host)
             self.disable()
 
-        return not self.disabled
+    def sync(self, context, service):
+        if not service:
+            LOG.warn(_LW("No db entry of nova-compute %s!") % self.host)
+            self._handle_seems_disabled()
+        elif service['disabled']:
+            LOG.warn(_LW("Service nova-compute %s is disabled!") % self.host)
+            self.disable()
+        elif self.api.service_is_up(service):
+            self.seems_disabled = False
+            if not self.host_state:
+                self.refresh_state(context)
+            else:
+                # normal situation
+                pass
+        else:
+            # is down in db
+            self._handle_seems_disabled()
 
     def refresh_state(self, context):
         try:
             self.host_state = self.api.report_host_state(context, self.host)
             if not self.host_state:
-                LOG.warning(_LW("Host %s seems not ready yet.") % self.host)
+                LOG.error(_LW("Host %s is not ready yet.") % self.host)
+                self.disable()
             else:
                 LOG.info(_LI("Client %s is ready!") % self.host)
                 LOG.info(_LI("Host state: %s.") % self.host_state)
@@ -114,9 +131,6 @@ class SchedulerClient(object):
             LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
             self.disable()
 
-    @property
-    def disabled(self):
-        return self.host_state is None
-
     def disable(self):
         self.host_state = None
+        self.seems_disabled = True

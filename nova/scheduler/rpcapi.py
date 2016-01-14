@@ -136,5 +136,9 @@ class SchedulerAPI(object):
                           instance_uuids=instance_uuids)
 
     def notify_schedulers(self, ctxt, host_name):
-        cctxt = self.client.prepare(version='4.2', fanout=True)
+        cctxt = self.client.prepare(version='4.0', fanout=True)
         return cctxt.cast(ctxt, 'notify_scheduler', host_name=host_name)
+
+    def notify_scheduler(self, ctxt, compute, scheduler):
+        cctxt = self.client.prepare(version='4.0', server=scheduler)
+        cctxt.cast(ctxt, 'notify_scheduler', host_name=compute)

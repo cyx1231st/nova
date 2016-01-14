@@ -554,7 +554,6 @@ class ResourceTracker(object):
 
         # update the compute_node
         self._update(context)
-        self.scheduler_servers.update_from_compute(context, self.compute_node)
         LOG.info(_LI('Compute_service record updated for %(host)s:%(node)s'),
                      {'host': self.host, 'node': self.nodename})
 
@@ -665,6 +664,7 @@ class ResourceTracker(object):
         self.scheduler_client.update_resource_stats(self.compute_node)
         if self.pci_tracker:
             self.pci_tracker.save(context)
+        self.scheduler_servers.update_from_compute(context, self.compute_node)
 
     def _update_usage(self, usage, sign=1):
         mem_usage = usage['memory_mb']

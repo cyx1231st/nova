@@ -11,6 +11,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import random
 
 from nova.objects import base
 from nova.objects import fields
@@ -51,6 +52,7 @@ class HostState(base.NovaObject):
 
     @classmethod
     def from_primitives(cls, context, compute):
-        state = cls(context, micro_version=0)
+        micro_version = random.randint()
+        state = cls(context, micro_version=micro_version)
         state._from_compute(compute)
         return state

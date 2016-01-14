@@ -72,3 +72,6 @@ class SchedulerClient(object):
 
     def notify_schedulers(self, context, host_name):
         self.queryclient.notify_schedulers(context, host_name)
+
+    def notify_scheduler(self, context, compute, scheduler):
+        self.queryclient.notify_scheduler(context, compute, scheduler)

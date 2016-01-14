@@ -101,3 +101,6 @@ class SchedulerQueryClient(object):
 
     def notify_schedulers(self, context, host_name):
         self.scheduler_rpcapi.notify_schedulers(context, host_name)
+
+    def notify_scheduler(self, context, compute, scheduler):
+        self.scheduler_rpcapi.notify_scheduler(context, compute, scheduler)
