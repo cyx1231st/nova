@@ -6667,5 +6667,7 @@ class ComputeManager(manager.Manager):
             instance.system_metadata)
         self.driver.unquiesce(context, instance, image_meta)
 
-    def report_host_state(self, compute, scheduler):
-        return self.scheduler_servers.report_host_state(compute, scheduler)
+    @wrap_exception()
+    def report_host_state(self, context, compute_node, scheduler):
+        return self.scheduler_servers.report_host_state(
+                compute_node, scheduler)

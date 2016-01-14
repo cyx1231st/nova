@@ -53,4 +53,4 @@ class HostState(base.NovaObject):
     def from_primitives(cls, context, compute):
         state = cls(context, micro_version=0)
         state._from_compute(compute)
-        
+        return state
