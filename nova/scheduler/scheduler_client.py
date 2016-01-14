@@ -79,6 +79,17 @@ class SchedulerClients(object):
                         % host_name)
         client_obj.refresh_state(context, True)
 
+    def send_commit(self, context, commit, compute):
+        LOG.info(_LI("Get commit %s from host %s")
+                 % commit, compute)
+        client_obj = self.clients.get(compute, None)
+        if not client_obj:
+            client_obj = SchedulerClient(compute, self.api)
+            self.clients[compute] = client_obj
+            LOG.info(_LI("Added temp client %s from notification.")
+                        % compute)
+        client_obj.process_commit(commit)
+
 
 class SchedulerClient(object):
     def __init__(self, host, api):
@@ -132,6 +143,16 @@ class SchedulerClient(object):
         except messaging.MessagingTimeout:
             LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
             self.disable()
+
+    def process_commit(self, context, commit):
+        if self.host_state:
+            success = self.host_state.commit(commit)
+            if not success:
+                self.refresh_state(context)
+            else:
+                LOG.info(_LI("Updated state: %s") % self.host_state)
+        else:
+            self.refresh_state(context, True)
 
     def disable(self):
         self.host_state = None

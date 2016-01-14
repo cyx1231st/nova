@@ -75,3 +75,6 @@ class SchedulerClient(object):
 
     def notify_scheduler(self, context, compute, scheduler):
         self.queryclient.notify_scheduler(context, compute, scheduler)
+
+    def send_commit(self, context, commit, compute, scheduler):
+        self.queryclient.send_commit(context, commit, compute, scheduler)

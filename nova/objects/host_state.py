@@ -56,3 +56,37 @@ class HostState(base.NovaObject):
         state = cls(context, micro_version=micro_version)
         state._from_compute(compute)
         return state
+
+    _special = {'micro_version'}
+    _normal = set(fields.keys()) - _special
+
+    def update_from_compute(self, context, compute):
+        new_state = HostState.from_primitives(context, compute)
+        commit = {}
+
+        for field in self._normal:
+            new = getattr(new_state, field)
+            old = getattr(self, field)
+            change = new - old
+            if change:
+                setattr(self, field, new)
+                commit[field] = change
+
+        if commit:
+            commit['version_changed'] = 1
+            self.micro_version = self.micro_version + 1
+            commit['version_expected'] = self.micro_version
+            return commit
+        else:
+            return None
+
+    _special_keys = {'version_expected'}
+
+    def process_commit(self, commit):
+        for item in commit:
+            keys = set(item.keys()) - self._special_keys
+            for field in keys:
+                setattr(self, field, getattr(self, field) + item[field])
+            if self.micro_version != item['version_expected']:
+                return False
+        return True

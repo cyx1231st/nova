@@ -142,3 +142,7 @@ class SchedulerAPI(object):
     def notify_scheduler(self, ctxt, compute, scheduler):
         cctxt = self.client.prepare(version='4.0', server=scheduler)
         cctxt.cast(ctxt, 'notify_scheduler', host_name=compute)
+
+    def send_commit(self, ctxt, commmit, compute, scheduler):
+        cctxt = self.client.prepare(version='4.0', server=scheduler)
+        cctxt.cast(ctxt, 'send_commit', commit=commit, compute=compute)
