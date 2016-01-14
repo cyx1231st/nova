@@ -60,7 +60,8 @@ class SchedulerManager(manager.Manager):
         self.clients.periodically_refresh_clients(context)
 
     def pre_start_hook(self):
-        self.clients.periodically_refresh_clients(nova.context.get_admin_context())
+        self.clients.periodically_refresh_clients(
+                nova.context.get_admin_context())
 
     @messaging.expected_exceptions(exception.NoValidHost)
     def select_destinations(self, context, request_spec, filter_properties):
@@ -116,3 +117,6 @@ class SchedulerManager(manager.Manager):
 
     def notify_scheduler(self, context, host_name):
         self.clients.notify_scheduler(context, host_name)
+
+    def send_commit(self, context, commit, compute):
+        self.clients.send_commit(context, commit, compute)
