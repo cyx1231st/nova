@@ -17,6 +17,7 @@ from oslo_log import log as logging
 
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
+from nova.scheduler import client as scheduler_client
 
 LOG = logging.getLogger(__name__)
 
@@ -26,12 +27,13 @@ class SchedulerServers(object):
         self.servers = {}
         self.host_state = None
         self.host = host
+        self.scheduler_api = scheduler_client.SchedulerClient()
 
     def update_from_compute(self, context, compute):
         if not self.host_state:
             self.host_state = objects.HostState.from_primitives(
                     context, compute)
-            # TODO() broadcast to notify all schedulers
+            self.scheduler_api.notify_schedulers(context, self.host)
             LOG.info(_LI("Scheduler server %s is up!") % self.host)
         else:
             # TODO() incremental update

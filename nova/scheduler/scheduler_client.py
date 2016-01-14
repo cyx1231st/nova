@@ -36,15 +36,13 @@ class APIProxy(object):
 
 
 class SchedulerClients(object):
-    def __init__(self, context, host):
+    def __init__(self, host):
         self.ready = False
 
-        self.context = context
         self.host = host
         self.api = APIProxy(host)
 
         self.clients = {}
-        self._scan_clients(self.context)
 
         self.ready = True
 
@@ -52,8 +50,8 @@ class SchedulerClients(object):
         service_refs = {service.host: service
                         for service in objects.ServiceList.get_by_binary(
                             context, 'nova-compute')}
-        service_keys_db = service_refs.keys()
-        service_keys_cache = self.clients.keys()
+        service_keys_db = set(service_refs.keys())
+        service_keys_cache = set(self.clients.keys())
 
         new_keys = service_keys_db - service_keys_cache
         old_keys = service_keys_cache - service_keys_db
@@ -62,19 +60,26 @@ class SchedulerClients(object):
             client_obj = SchedulerClient(service_refs[new_key],
                                          self.api)
             self.clients[new_key] = client_obj
-            LOG.INFO(_LI("Added new client: %s") % new_key)
+            LOG.info(_LI("Added new client: %s") % new_key)
 
         for old_key in old_keys:
-            LOG.INFO(_LI("Remove client: %s") % old_key)
+            LOG.info(_LI("Remove client: %s") % old_key)
             del self.clients[old_key]
 
         for client in self.clients.values():
             client.sync()
         
-    @periodic_task.periodic_task
-    def _refresh_clients(self):
+    def periodically_refresh_clients(self, context):
         if self.ready:
-            self._scan_clients(self.context)
+            self._scan_clients(context)
+
+    def notify_scheduler(self, context, host_name):
+        self._scan_clients(context)
+        if host_name not in self.clients:
+            LOG.error(_LW("Cannot find the host %s during notifying!") %
+                    host_name)
+            return
+        self.clients[host_name].sync()
 
 
 class SchedulerClient(object):
@@ -84,7 +89,7 @@ class SchedulerClient(object):
         self.service = service
         self.host_state = None
 
-    def sync(self, service):
+    def sync(self):
         if not self.disabled:
             return True
 
@@ -105,7 +110,7 @@ class SchedulerClient(object):
                 LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
                 self.disable()
         else:
-            LOG.warn(_LW("Service nova-compute %d seems down!") % self.host)
+            LOG.warn(_LW("Service nova-compute %s seems down!") % self.host)
             self.disable()
 
         return not self.disabled
