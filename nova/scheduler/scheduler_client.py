@@ -148,6 +148,10 @@ class SchedulerClient(object):
         if self.host_state:
             success = self.host_state.process_commit(commit)
             if not success:
+                LOG.error(_LE("Failed updated state: %(state)s,"
+                          "expected version: %(version)s!")
+                          % {'state': self.host_state,
+                             'version': commit['version_expected']})
                 self.refresh_state(context)
             else:
                 LOG.info(_LI("Updated state: %s") % self.host_state)
