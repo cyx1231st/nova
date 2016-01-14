@@ -88,7 +88,7 @@ class SchedulerClients(object):
             self.clients[compute] = client_obj
             LOG.info(_LI("Added temp client %s from notification.")
                         % compute)
-        client_obj.process_commit(commit)
+        client_obj.process_commit(context, commit)
 
 
 class SchedulerClient(object):
@@ -146,7 +146,7 @@ class SchedulerClient(object):
 
     def process_commit(self, context, commit):
         if self.host_state:
-            success = self.host_state.commit(commit)
+            success = self.host_state.process_commit(commit)
             if not success:
                 self.refresh_state(context)
             else:

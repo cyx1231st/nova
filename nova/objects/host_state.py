@@ -73,7 +73,7 @@ class HostState(base.NovaObject):
                 commit[field] = change
 
         if commit:
-            commit['version_changed'] = 1
+            commit['micro_version'] = 1
             self.micro_version = self.micro_version + 1
             commit['version_expected'] = self.micro_version
             return commit
