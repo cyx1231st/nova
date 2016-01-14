@@ -27,6 +27,7 @@ from oslo_utils import importutils
 import nova.conf
 from nova import exception
 from nova import manager
+from nova.scheduler import scheduler_client
 # from nova import quota
 
 
@@ -46,6 +47,7 @@ class SchedulerManager(manager.Manager):
         self.driver = importutils.import_object(scheduler_driver)
         super(SchedulerManager, self).__init__(service_name='scheduler',
                                                *args, **kwargs)
+        self.clients = scheduler_client.SchedulerClients(self.host)
 
     # @periodic_task.periodic_task
     # def _expire_reservations(self, context):
@@ -55,6 +57,7 @@ class SchedulerManager(manager.Manager):
                                  run_immediately=True)
     def _run_periodic_tasks(self, context):
         self.driver.run_periodic_tasks(context)
+        self.clients.periodically_refresh_clients(context)
 
     @messaging.expected_exceptions(exception.NoValidHost)
     def select_destinations(self, context, request_spec, filter_properties):
@@ -107,3 +110,6 @@ class SchedulerManager(manager.Manager):
         """
         self.driver.host_manager.sync_instance_info(context, host_name,
                                                     instance_uuids)
+
+    def notify_scheduler(self, context, host_name):
+        self.clients.notify_scheduler(context, host_name)

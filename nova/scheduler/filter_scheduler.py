@@ -31,6 +31,7 @@ from nova import objects
 from nova import rpc
 from nova.scheduler import driver
 from nova.scheduler import scheduler_options
+from nova.scheduler import scheduler_client
 
 
 CONF = nova.conf.CONF
