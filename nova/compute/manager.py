@@ -6671,3 +6671,7 @@ class ComputeManager(manager.Manager):
     def report_host_state(self, context, compute_node, scheduler):
         return self.scheduler_servers.report_host_state(
                 compute_node, scheduler)
+        
+    @periodic_task.periodic_task
+    def periodically_refresh_servers(self, context):
+        self.scheduler_servers.periodically_refresh_servers(context)

@@ -108,7 +108,7 @@ class SchedulerServer(object):
         self.api = api
         self.tmp = False
 
-    def _handle_seems_disabled(self):
+    def _handle_tmp(self):
         if self.queue:
             if self.tmp:
                 LOG.info(_LI("Keep service nova-scheduler %s!")
@@ -124,7 +124,7 @@ class SchedulerServer(object):
     def sync(self, context, service):
         if not service:
             LOG.info(_LI("No db entry of nova-scheduler %s!") % self.host)
-            self._handle_seems_disabled()
+            self._handle_tmp()
         elif service['disabled']:
             LOG.info(_LI("Service nova-scheduler %s is disabled!")
                         % self.host)
@@ -134,7 +134,7 @@ class SchedulerServer(object):
             if not self.queue:
                 self.api.notify_scheduler(context, self.host)
         else:
-            self._handle_seems_disabled()
+            self._handle_tmp()
 
     def refresh_state(self):
         LOG.info(_LI("scheduler %s is refreshed!") % self.host)
