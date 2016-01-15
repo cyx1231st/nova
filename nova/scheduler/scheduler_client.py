@@ -82,8 +82,8 @@ class SchedulerClients(object):
         client_obj.refresh_state(context, True)
 
     def send_commit(self, context, commit, compute, seed):
-        LOG.info(_LI("Get commit %(commit)s from host %(compute)s")
-                 % {"commit": commit, "compute": compute})
+        LOG.info(_LI("Get commit #%(seed)d from host %(compute)s: %(commit)s.")
+                 % {"commit": commit, "compute": compute, "seed": seed})
         client_obj = self.clients.get(compute, None)
         if not client_obj:
             client_obj = SchedulerClient(compute, self.api)
