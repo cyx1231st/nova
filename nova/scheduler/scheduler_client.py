@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import bisect
+
 from oslo_log import log as logging
 import oslo_messaging as messaging
 
@@ -79,7 +81,7 @@ class SchedulerClients(object):
                         % host_name)
         client_obj.refresh_state(context, True)
 
-    def send_commit(self, context, commit, compute):
+    def send_commit(self, context, commit, compute, seed):
         LOG.info(_LI("Get commit %(commit)s from host %(compute)s")
                  % {"commit": commit, "compute": compute})
         client_obj = self.clients.get(compute, None)
@@ -88,15 +90,19 @@ class SchedulerClients(object):
             self.clients[compute] = client_obj
             LOG.info(_LI("Added temp client %s from notification.")
                         % compute)
-        client_obj.process_commit(context, commit)
+        client_obj.process_commit(context, commit, seed)
 
 
 class SchedulerClient(object):
     def __init__(self, host, api):
         self.host = host
         self.api = api
+        # the min window is 1
+        self.window_max = 7
         self.host_state = None
         self.tmp = False
+        self.seed = None
+        self.window = None
 
     def _handle_tmp(self):
         if self.host_state:
@@ -132,7 +138,8 @@ class SchedulerClient(object):
 
     def refresh_state(self, context, tmp=False):
         try:
-            self.host_state = self.api.report_host_state(context, self.host)
+            self.host_state, seed = \
+                    self.api.report_host_state(context, self.host)
             if not self.host_state:
                 LOG.error(_LE("Host %s is not ready yet.") % self.host)
                 self.disable()
@@ -140,19 +147,50 @@ class SchedulerClient(object):
                 LOG.info(_LI("Client %s is ready!") % self.host)
                 LOG.info(_LI("Host state: %s.") % self.host_state)
                 self.tmp = tmp
+                self.seed = seed
         except messaging.MessagingTimeout:
             LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
             self.disable()
 
-    def process_commit(self, context, commit):
+    def process_commit(self, context, commit, seed):
         if self.host_state:
+            # check window
+            if seed <= self.seed:
+                index = bisect.bisect_left(self.window, seed)
+                if seed == self.seed or self.window[index] != seed:
+                    LOG.error(_LE("Duplicated commit %d, abort!") % seed)
+                    self.refresh_state(context)
+                    return
+                else:
+                    LOG.info(_LI("Found a lost commit %d!") % seed)
+                    del self.window[index]
+            elif seed == self.seed + 1:
+                self.seed = seed
+            else:
+                if seed - self.seed > self.window_max:
+                    LOG.error(_LE("A gient gap between %(from)d and %(to)d, "
+                        "abort commit!") % {'from': self.seed, 'to': seed})
+                    self.refresh_state(context)
+                    return
+                else:
+                    for i in range(self.seed + 1, seed):
+                        self.window.append(i)
+                self.seed = seed
+
+            if self.window:
+                LOG.info(_LI("Missing commits: %s.") % self.window)
+                if self.seed - self.window[0] >= self.window_max:
+                    LOG.error(_LE("Lost exceed window capacity %d, abort!")
+                              % self.window_max)
+                    self.refresh_state(context)
+                    return
+
             success = self.host_state.process_commit(commit)
             if not success:
-                LOG.error(_LE("Failed updated state: %(state)s,"
-                          "expected version: %(version)s!")
-                          % {'state': self.host_state,
-                             'version': commit['version_expected']})
-                self.refresh_state(context)
+                LOG.info(_LI("The state is updated in a different order:"
+                             " %(state)s, expected version: %(version)s!")
+                         % {'state': self.host_state,
+                            'version': commit['version_expected']})
             else:
                 LOG.info(_LI("Updated state: %s") % self.host_state)
         else:
@@ -161,3 +199,5 @@ class SchedulerClient(object):
     def disable(self):
         self.host_state = None
         self.tmp = False
+        self.seed = None
+        self.window = []

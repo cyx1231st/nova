@@ -118,5 +118,5 @@ class SchedulerManager(manager.Manager):
     def notify_scheduler(self, context, host_name):
         self.clients.notify_scheduler(context, host_name)
 
-    def send_commit(self, context, commit, compute):
-        self.clients.send_commit(context, commit, compute)
+    def send_commit(self, context, commit, compute, seed):
+        self.clients.send_commit(context, commit, compute, seed)

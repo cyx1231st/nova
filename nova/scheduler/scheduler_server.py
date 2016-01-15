@@ -12,7 +12,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+from eventlet import greenthread
 from eventlet import queue
+import random
 
 from oslo_log import log as logging
 
@@ -42,9 +44,9 @@ class APIProxy(object):
         return self.scheduler_api.notify_scheduler(
                 context, self.host, scheduler)
 
-    def send_commit(self, context, commit, scheduler):
+    def send_commit(self, context, commit, scheduler, seed):
         return self.scheduler_api.send_commit(
-                context, commit, self.host, scheduler)
+                context, commit, self.host, scheduler, seed)
 
 
 class SchedulerServers(object):
@@ -84,7 +86,7 @@ class SchedulerServers(object):
             LOG.info(_LW("Added temp server %s from report.") % scheduler)
 
         server_obj.refresh_state()
-        return self.host_state
+        return self.host_state, server_obj.seed
 
     def periodically_refresh_servers(self, context):
         service_refs = {service.host: service
@@ -118,6 +120,7 @@ class SchedulerServer(object):
         self.api = api
         self.tmp = False
         self.thread = None
+        self.seed = None
 
     def _handle_tmp(self):
         if self.queue is not None:
@@ -155,19 +158,27 @@ class SchedulerServer(object):
         self.queue = queue.Queue()
         self.thread = utils.spawn(
             self._dispatch_commits, nova.context.get_admin_context())
+        self.seed = random.randint(0, 1000000)
 
     def _dispatch_commits(self, context):
         while True:
+            if not self.queue:
+                # server not ready yet
+                greenthread.sleep(0)
+                continue
+
             jobs = []
             jobs.append(self.queue.get())
             for i in range(self.queue.qsize(), 0, -1):
                 jobs.append(self.queue.get_nowait())
             LOG.info(_LI("Send commits to %(scheduler)s: %(commit)s")
                     % {'scheduler': self.host, 'commit': jobs})
-            self.api.send_commit(context, jobs, self.host)
+            self.seed = self.seed + 1
+            self.api.send_commit(context, jobs, self.host, self.seed)
 
     def disable(self):
         self.tmp = False
         if self.thread:
             self.thread.kill()
         self.queue = None
+        self.seed = None

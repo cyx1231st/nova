@@ -105,6 +105,6 @@ class SchedulerQueryClient(object):
     def notify_scheduler(self, context, compute, scheduler):
         self.scheduler_rpcapi.notify_scheduler(context, compute, scheduler)
 
-    def send_commit(self, context, commit, compute, scheduler):
+    def send_commit(self, context, commit, compute, scheduler, seed):
         self.scheduler_rpcapi.send_commit(
-            context, commit, compute, scheduler)
+                context, commit, compute, scheduler, seed)
