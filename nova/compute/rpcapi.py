@@ -1000,6 +1000,6 @@ class ComputeAPI(object):
         version = '4.0'
         cctxt = self.client.prepare(server=compute,
                    version=version)
-        return cctxt.call(ctxt, 'report_host_state',
+        return cctxt.cast(ctxt, 'report_host_state',
                    compute_node=compute,
                    scheduler=scheduler)

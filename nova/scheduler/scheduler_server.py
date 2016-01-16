@@ -75,18 +75,19 @@ class SchedulerServers(object):
                           "%(actual)s, expected %(expected)s!"),
                       {'actual': self.host, 'expected': compute})
             return
-        elif not self.host_state:
-            LOG.error(_LW("The host %s isn't ready yet!") % self.host)
-            return
+        # elif not self.host_state:
+        #    LOG.error(_LW("The host %s isn't ready yet!") % self.host)
+        #    return
 
         server_obj = self.servers.get(scheduler, None)
         if not server_obj:
-            server_obj = SchedulerServer(scheduler, self.api)
+            server_obj = SchedulerServer(scheduler, self.api, self)
             self.servers[scheduler] = server_obj
             LOG.info(_LW("Added temp server %s from report.") % scheduler)
 
         server_obj.refresh_state()
-        return self.host_state, server_obj.seed
+        return
+        # return self.host_state, server_obj.seed
 
     def periodically_refresh_servers(self, context):
         service_refs = {service.host: service
@@ -99,7 +100,8 @@ class SchedulerServers(object):
         old_keys = service_keys_cache - service_keys_db
 
         for new_key in new_keys:
-            server_obj = SchedulerServer(service_refs[new_key].host, self.api)
+            server_obj = SchedulerServer(
+                    service_refs[new_key].host, self.api, self)
             self.servers[new_key] = server_obj
             LOG.info(_LI("Added new server: %s") % new_key)
 
@@ -114,8 +116,9 @@ class SchedulerServers(object):
 
 
 class SchedulerServer(object):
-    def __init__(self, host, api):
+    def __init__(self, host, api, manager):
         self.host = host
+        self.manager = manager
         self.queue = None
         self.api = api
         self.tmp = False
@@ -151,21 +154,27 @@ class SchedulerServer(object):
             self._handle_tmp()
 
     def refresh_state(self):
-        LOG.info(_LI("scheduler %s is refreshed!") % self.host)
+        LOG.info(_LI("scheduler %s is to be refreshed!") % self.host)
         self.disable()
 
         self.tmp = True
         self.queue = queue.Queue()
+        self.queue.put("refresh")
         self.thread = utils.spawn(
             self._dispatch_commits, nova.context.get_admin_context())
         self.seed = random.randint(0, 1000000)
 
     def _dispatch_commits(self, context):
         while True:
+            if not self.manager.host_state:
+                LOG.error(_LE("No host_state available in %s, abort!")
+                          % self.host)
+                self.disable()
+
             if not self.queue:
-                # server not ready yet
-                greenthread.sleep(0)
-                continue
+                LOG.error(_LE("No queue available in %s, abort!")
+                          % self.host)
+                self.disable()
 
             jobs = []
             jobs.append(self.queue.get())
@@ -173,12 +182,19 @@ class SchedulerServer(object):
                 jobs.append(self.queue.get_nowait())
             LOG.info(_LI("Send commits to %(scheduler)s: %(commit)s")
                     % {'scheduler': self.host, 'commit': jobs})
-            self.seed = self.seed + 1
-            self.api.send_commit(context, jobs, self.host, self.seed)
+
+            if jobs[0] == "refresh":
+                LOG.info(_LI("scheduler %s is refreshed!") % self.host)
+                self.api.send_commit(context, self.manager.host_state,
+                                     self.host, self.seed)
+            else:
+                self.seed = self.seed + 1
+                self.api.send_commit(context, jobs, self.host, self.seed)
 
     def disable(self):
         self.tmp = False
-        if self.thread:
-            self.thread.kill()
         self.queue = None
         self.seed = None
+        # this must be the last one
+        if self.thread:
+            self.thread.kill()

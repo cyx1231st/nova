@@ -137,6 +137,9 @@ class SchedulerClient(object):
             self._handle_tmp()
 
     def refresh_state(self, context, tmp=False):
+        LOG.info(_LI("Client %s is to be refreshed!") % self.host)
+        self.api.report_host_state(context, self.host)
+        """
         try:
             self.host_state, seed = \
                     self.api.report_host_state(context, self.host)
@@ -151,8 +154,15 @@ class SchedulerClient(object):
         except messaging.MessagingTimeout:
             LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
             self.disable()
+        """
 
     def process_commit(self, context, commit, seed):
+        if isinstance(commit, objects.HostState):
+            LOG.info(_LI("Client %s is refreshed!") % self.host)
+            self.host_state = commit
+            self.seed = seed
+            return
+
         if self.host_state:
             # check window
             if seed <= self.seed:
