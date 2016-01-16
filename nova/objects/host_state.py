@@ -34,6 +34,22 @@ class HostState(base.NovaObject):
 
         'vcpus_total': fields.IntegerField(),
         'vcpus_used': fields.IntegerField(),
+
+        'numa_topology': fields.StringField(nullable=True)
+        'pci_stats': fields.ObjectField('pci_stats.PciDevicesStats')
+
+        'host_ip': fields.IPAddressField(nullable=True)
+        'hypervisor_type': fields.StringField()
+        'hypervisor_version': fields.IntegerField()
+        'hypervisor_hostname': fields.StringField(nullable=True)
+        'supported_instances': fields.ListOfListOfStringsField()
+
+        'num_instances': fields.IntegerField()
+        'num_io_ops': fields.IntegerField()
+
+        'metrics': fields.ObjectField('MonitorMetricList')
+        'cpu_allocation_ratio': fields.FloatField(),
+        'ram_allocation_ratio': fields.FloatField(),
     }
     
     def _from_compute(self, compute):
@@ -50,6 +66,30 @@ class HostState(base.NovaObject):
         self.vcpus_total = compute.vcpus
         self.vcpus_used = compute.vcpus_used
 
+        self.numa_topology = compute.numa_topology
+        self.pci_stats = pci_stats.PciDevicesStats(
+                compute.pci_device_pools)
+
+        self.host_ip = compute.host_ip
+        self.hypervisor_type = compute.hypervisor_type
+        self.hypervisor_version = compute.hypervisor_version
+        self.hypervisor_hostname = compute.hypervisor_hostname
+        if compute.supported_hv_specs:
+            self.supported_instances = [spec.to_list() for spec
+                                        in compute.supported_hv_specs]
+        else:
+            self.supported_instances = []
+
+        stats = compute.stats or {}
+
+        self.num_instances = int(stats.get('num_instances', 0))
+        self.num_io_ops = int(stats.get('io_workload', 0))
+
+        self.metrics = objects.MonitorMetricList.from_json(compute.metrics)
+
+        self.cpu_allocation_ratio = compute.cpu_allocation_ratio
+        self.ram_allocation_ratio = compute.ram_allocation_ratio
+
     @classmethod
     def from_primitives(cls, context, compute):
         micro_version = random.randint(0, 1000000)
@@ -57,20 +97,47 @@ class HostState(base.NovaObject):
         state._from_compute(compute)
         return state
 
-    _special = {'micro_version'}
-    _normal = set(fields.keys()) - _special
+    _special = {'micro_version', 'numa_topology', 'pci_stats'}
+    _integer_fields = set('total_usable_ram_mb',
+                          'free_ram_mb',
+                          'total_usable_disk_gb',
+                          'disk_mb_used',
+                          'free_disk_mb',
+                          'vcpus_total',
+                          'vcpus_used',
+                          'num_instances',
+                          'num_io_ops',
+                          )
+    _reset_fields = set('host_ip',
+                        'hypervisor_type',
+                        'hypervisor_version',
+                        'hypervisor_hostname',
+                        'supported_instances',
+                        'metrics',
+                        'cpu_allocation_ratio',
+                        'ram_allocation_ratio',
+                        )
 
     def update_from_compute(self, context, compute):
         new_state = HostState.from_primitives(context, compute)
         commit = {}
 
-        for field in self._normal:
+        for field in self._integer_fields:
             new = getattr(new_state, field)
             old = getattr(self, field)
             change = new - old
             if change:
                 setattr(self, field, new)
                 commit[field] = change
+
+        for field in self._reset_fields:
+            new = getattr(new_state, field)
+            old = getattr(self, field)
+            if new != old:
+                setattr(self, field, new)
+                commit[field] = new
+
+        # TODO() numa_topology, pci_stats
 
         if commit:
             commit['micro_version'] = 1
@@ -83,10 +150,21 @@ class HostState(base.NovaObject):
     _special_keys = {'version_expected'}
 
     def process_commit(self, commit):
+        result = True
         for item in commit:
-            keys = set(item.keys()) - self._special_keys
-            for field in keys:
+            keys = set(item.keys())
+
+            changed_keys = keys & self._integer_fields
+            for field in changed_keys:
                 setattr(self, field, getattr(self, field) + item[field])
+
+            reset_keys = keys & self._reset_fields
+            for field in reset_keys:
+                setattr(self, field, item[field]
+
+            # TODO() numa_topology, pci_stats
+
             if self.micro_version != item['version_expected']:
-                return False
-        return True
+                result = False
+
+        return result
