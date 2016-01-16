@@ -93,13 +93,14 @@ class HostState(base.NovaObject):
         self.ram_allocation_ratio = compute.ram_allocation_ratio
 
     @classmethod
-    def from_primitives(cls, context, compute):
-        micro_version = random.randint(0, 1000000)
-        state = cls(context, micro_version=micro_version)
+    def from_primitives(cls, context, compute, version=None):
+        if version is None:
+            version = random.randint(0, 1000000)
+        state = cls(context, micro_version=version)
         state._from_compute(compute)
         return state
 
-    _special = {'micro_version', 'numa_topology', 'pci_stats'}
+    _special = {'numa_topology', 'pci_stats'}
     _integer_fields = {'total_usable_ram_mb',
                        'free_ram_mb',
                        'total_usable_disk_gb',
@@ -109,6 +110,7 @@ class HostState(base.NovaObject):
                        'vcpus_used',
                        'num_instances',
                        'num_io_ops',
+                       'micro_version',
                        }
     _reset_fields = {'host_ip',
                      'hypervisor_type',
@@ -121,7 +123,9 @@ class HostState(base.NovaObject):
                      }
 
     def update_from_compute(self, context, compute):
-        new_state = HostState.from_primitives(context, compute)
+        new_version = self.micro_version + 1
+        new_state = HostState.from_primitives(
+                context, compute, version=new_version)
         commit = {}
 
         for field in self._integer_fields:

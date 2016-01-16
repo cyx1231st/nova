@@ -197,10 +197,7 @@ class SchedulerClient(object):
 
             success = self.host_state.process_commit(commit)
             if not success:
-                LOG.info(_LI("The state is updated in a different order:"
-                             " %(state)s, expected version: %(version)s!")
-                         % {'state': self.host_state,
-                            'version': commit['version_expected']})
+                LOG.info(_LI("HostState doesn't match."))
             else:
                 LOG.info(_LI("Updated state: %s") % self.host_state)
         else:
