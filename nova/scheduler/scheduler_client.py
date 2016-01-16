@@ -134,7 +134,6 @@ class SchedulerClient(object):
                 # normal situation
                 pass
         else:
-            LOG.info(_LI("Service compute %s is down!") % self.host)
             self._handle_tmp()
 
     def refresh_state(self, context, tmp=False):

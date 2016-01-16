@@ -61,7 +61,7 @@ class SchedulerServers(object):
             self.host_state = objects.HostState.from_primitives(
                     context, compute)
             self.api.notify_schedulers(context)
-            LOG.info(_LI("Scheduler server %s is up!") % self.host)
+            LOG.info(_LI("Compute %s is up!") % self.host)
         else:
             commit = self.host_state.update_from_compute(context, compute)
             if commit:
@@ -155,7 +155,6 @@ class SchedulerServer(object):
                 if self.queue is None:
                     self.api.notify_scheduler(context, self.host)
         else:
-            LOG.info(_LI("Service scheduler %s is down!") % self.host)
             self._handle_tmp()
 
     def refresh_state(self):
