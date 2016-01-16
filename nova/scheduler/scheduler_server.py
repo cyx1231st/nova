@@ -123,7 +123,7 @@ class SchedulerServer(object):
         self.api = api
         self.tmp = False
         self.thread = None
-        self.seed = None
+        self.seed = random.randint(0, 1000000)
 
     def _handle_tmp(self):
         if self.queue is not None:
@@ -163,7 +163,6 @@ class SchedulerServer(object):
         self.queue.put("refresh")
         self.thread = utils.spawn(
             self._dispatch_commits, nova.context.get_admin_context())
-        self.seed = random.randint(0, 1000000)
 
     def _dispatch_commits(self, context):
         while True:
@@ -182,13 +181,13 @@ class SchedulerServer(object):
             for i in range(self.queue.qsize(), 0, -1):
                 jobs.append(self.queue.get_nowait())
 
+            self.seed = self.seed + 1
             if jobs[0] == "refresh":
                 LOG.info(_LI("scheduler %(host)s is refreshed at %(seed)d!")
                          % {'host': self.host, 'seed': self.seed})
                 self.api.send_commit(context, self.manager.host_state,
                                      self.host, self.seed)
             else:
-                self.seed = self.seed + 1
                 LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
                              "%(commit)s")
                          % {'scheduler': self.host,
@@ -199,7 +198,6 @@ class SchedulerServer(object):
     def disable(self):
         self.tmp = False
         self.queue = None
-        self.seed = None
         # this must be the last one
         if self.thread:
             self.thread.kill()

@@ -16,7 +16,6 @@
 import bisect
 
 from oslo_log import log as logging
-import oslo_messaging as messaging
 
 from nova.compute import rpcapi as compute_rpcapi
 from nova.i18n import _LI, _LE
@@ -139,22 +138,6 @@ class SchedulerClient(object):
     def refresh_state(self, context, tmp=False):
         LOG.info(_LI("Client %s is to be refreshed!") % self.host)
         self.api.report_host_state(context, self.host)
-        """
-        try:
-            self.host_state, seed = \
-                    self.api.report_host_state(context, self.host)
-            if not self.host_state:
-                LOG.error(_LE("Host %s is not ready yet.") % self.host)
-                self.disable()
-            else:
-                LOG.info(_LI("Client %s is ready!") % self.host)
-                LOG.info(_LI("Host state: %s.") % self.host_state)
-                self.tmp = tmp
-                self.seed = seed
-        except messaging.MessagingTimeout:
-            LOG.error(_LE("Client state fetch timeout: %s!") % self.host)
-            self.disable()
-        """
 
     def process_commit(self, context, commit, seed):
         if isinstance(commit, objects.HostState):
@@ -168,8 +151,7 @@ class SchedulerClient(object):
             if seed <= self.seed:
                 index = bisect.bisect_left(self.window, seed)
                 if seed == self.seed or self.window[index] != seed:
-                    LOG.error(_LE("Duplicated commit %d, abort!") % seed)
-                    self.refresh_state(context)
+                    LOG.error(_LE("Old commit %d, ignore!") % seed)
                     return
                 else:
                     LOG.info(_LI("Found a lost commit %d!") % seed)
