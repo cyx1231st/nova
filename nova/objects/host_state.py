@@ -15,6 +15,7 @@ import random
 
 from nova.objects import base
 from nova.objects import fields
+from nova.pci import stats as pci_stats
 
 
 @base.NovaObjectRegistry.register
@@ -35,19 +36,20 @@ class HostState(base.NovaObject):
         'vcpus_total': fields.IntegerField(),
         'vcpus_used': fields.IntegerField(),
 
-        'numa_topology': fields.StringField(nullable=True)
-        'pci_stats': fields.ObjectField('pci_stats.PciDevicesStats')
+        'numa_topology': fields.StringField(nullable=True),
+        # 'pci_stats': fields.ObjectField('pci_stats.PciDeviceStats',
+        #                                 nullable=True),
 
-        'host_ip': fields.IPAddressField(nullable=True)
-        'hypervisor_type': fields.StringField()
-        'hypervisor_version': fields.IntegerField()
-        'hypervisor_hostname': fields.StringField(nullable=True)
-        'supported_instances': fields.ListOfListOfStringsField()
+        'host_ip': fields.IPAddressField(nullable=True),
+        'hypervisor_type': fields.StringField(),
+        'hypervisor_version': fields.IntegerField(),
+        'hypervisor_hostname': fields.StringField(nullable=True),
+        'supported_instances': fields.ListOfListOfStringsField(),
 
-        'num_instances': fields.IntegerField()
-        'num_io_ops': fields.IntegerField()
+        'num_instances': fields.IntegerField(),
+        'num_io_ops': fields.IntegerField(),
 
-        'metrics': fields.ObjectField('MonitorMetricList')
+        'metrics': fields.ObjectField('MonitorMetricList'),
         'cpu_allocation_ratio': fields.FloatField(),
         'ram_allocation_ratio': fields.FloatField(),
     }
@@ -67,8 +69,8 @@ class HostState(base.NovaObject):
         self.vcpus_used = compute.vcpus_used
 
         self.numa_topology = compute.numa_topology
-        self.pci_stats = pci_stats.PciDevicesStats(
-                compute.pci_device_pools)
+        # self.pci_stats = pci_stats.PciDeviceStats(
+        #        compute.pci_device_pools)
 
         self.host_ip = compute.host_ip
         self.hypervisor_type = compute.hypervisor_type
@@ -98,25 +100,25 @@ class HostState(base.NovaObject):
         return state
 
     _special = {'micro_version', 'numa_topology', 'pci_stats'}
-    _integer_fields = set('total_usable_ram_mb',
-                          'free_ram_mb',
-                          'total_usable_disk_gb',
-                          'disk_mb_used',
-                          'free_disk_mb',
-                          'vcpus_total',
-                          'vcpus_used',
-                          'num_instances',
-                          'num_io_ops',
-                          )
-    _reset_fields = set('host_ip',
-                        'hypervisor_type',
-                        'hypervisor_version',
-                        'hypervisor_hostname',
-                        'supported_instances',
-                        'metrics',
-                        'cpu_allocation_ratio',
-                        'ram_allocation_ratio',
-                        )
+    _integer_fields = {'total_usable_ram_mb',
+                       'free_ram_mb',
+                       'total_usable_disk_gb',
+                       'disk_mb_used',
+                       'free_disk_mb',
+                       'vcpus_total',
+                       'vcpus_used',
+                       'num_instances',
+                       'num_io_ops',
+                       }
+    _reset_fields = {'host_ip',
+                     'hypervisor_type',
+                     'hypervisor_version',
+                     'hypervisor_hostname',
+                     'supported_instances',
+                     'metrics',
+                     'cpu_allocation_ratio',
+                     'ram_allocation_ratio',
+                     }
 
     def update_from_compute(self, context, compute):
         new_state = HostState.from_primitives(context, compute)
@@ -160,7 +162,7 @@ class HostState(base.NovaObject):
 
             reset_keys = keys & self._reset_fields
             for field in reset_keys:
-                setattr(self, field, item[field]
+                setattr(self, field, item[field])
 
             # TODO() numa_topology, pci_stats
 
