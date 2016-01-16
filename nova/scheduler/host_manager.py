@@ -18,7 +18,6 @@ Manage hosts in the current zone.
 """
 
 import collections
-import functools
 import time
 try:
     from collections import UserDict as IterableUserDict   # Python 3
@@ -37,6 +36,7 @@ from nova import exception
 from nova.i18n import _LI, _LW
 from nova import objects
 from nova.pci import stats as pci_stats
+from nova.scheduler import claims
 from nova.scheduler import filters
 from nova.scheduler import weights
 from nova import utils
@@ -75,40 +75,16 @@ class ReadOnlyDict(IterableUserDict):
         raise TypeError()
 
 
-@utils.expects_func_args('self', 'spec_obj')
-def set_update_time_on_success(function):
-    """Set updated time of HostState when consuming succeed."""
-
-    @functools.wraps(function)
-    def decorated_function(self, spec_obj):
-        return_value = None
-        try:
-            return_value = function(self, spec_obj)
-        except Exception as e:
-            # Ignores exception raised from consume_from_request() so that
-            # booting instance would fail in the resource claim of compute
-            # node, other suitable node may be chosen during scheduling retry.
-            LOG.warning(_LW("Selected host: %(host)s failed to consume from "
-                            "instance. Error: %(error)s"),
-                        {'host': self.host, 'error': e})
-        else:
-            now = timeutils.utcnow()
-            # NOTE(sbauza): Objects are UTC tz-aware by default
-            self.updated = now.replace(tzinfo=iso8601.iso8601.Utc())
-        return return_value
-
-    return decorated_function
-
-
 class HostState(object):
     """Mutable and immutable information tracked for a host.
     This is an attempt to remove the ad-hoc data structures
     previously used and lock down access.
     """
 
-    def __init__(self, host, node, compute=None):
+    def __init__(self, host, node):
         self.host = host
         self.nodename = node
+        self._lock_name = (host, node)
 
         # Mutable available resources.
         # These will change as resources are virtually "consumed".
@@ -151,13 +127,33 @@ class HostState(object):
         self.cpu_allocation_ratio = None
 
         self.updated = None
-        if compute:
-            self.update_from_compute_node(compute)
 
-    def update_service(self, service):
-        self.service = ReadOnlyDict(service)
+    def update(self, compute=None, service=None, aggregates=None,
+            inst_dict=None):
+        """Update all information about a host."""
 
-    def update_from_compute_node(self, compute):
+        @utils.synchronized(self._lock_name)
+        def _locked_update(self, compute, service, aggregates, inst_dict):
+            # Scheduler API is inherently multi-threaded as every incoming RPC
+            # message will be dispatched in it's own green thread. So the
+            # shared host state should be updated in a consistent way to make
+            # sure its data is valid under concurrent write operations.
+            if compute is not None:
+                LOG.debug("Update host state from compute node: %s", compute)
+                self._update_from_compute_node(compute)
+            if aggregates is not None:
+                LOG.debug("Update host state with aggregates: %s", aggregates)
+                self.aggregates = aggregates
+            if service is not None:
+                LOG.debug("Update host state with service dict: %s", service)
+                self.service = ReadOnlyDict(service)
+            if inst_dict is not None:
+                LOG.debug("Update host state with instances: %s", inst_dict)
+                self.instances = inst_dict
+
+        return _locked_update(self, compute, service, aggregates, inst_dict)
+
+    def _update_from_compute_node(self, compute):
         """Update information about a host from a ComputeNode object."""
         if (self.updated and compute.updated_at
                 and self.updated > compute.updated_at):
@@ -221,58 +217,53 @@ class HostState(object):
         self.cpu_allocation_ratio = compute.cpu_allocation_ratio
         self.ram_allocation_ratio = compute.ram_allocation_ratio
 
-    @set_update_time_on_success
     def consume_from_request(self, spec_obj):
-        """Incrementally update host state from an RequestSpec object."""
-        disk_mb = (spec_obj.root_gb +
-                   spec_obj.ephemeral_gb) * 1024
-        ram_mb = spec_obj.memory_mb
-        vcpus = spec_obj.vcpus
-        self.free_ram_mb -= ram_mb
-        self.free_disk_mb -= disk_mb
-        self.vcpus_used += vcpus
+        """Incrementally update host state from an RequestSpec object, raise
+        exception ComputeResourcesUnavailable if consumption failed.
+        """
+
+        @utils.synchronized(self._lock_name)
+        def _locked(self, spec_obj):
+            # Scheduler API is inherently multi-threaded as every incoming RPC
+            # message will be dispatched in it's own green thread. So the
+            # shared host state should be consumed in a consistent way to make
+            # sure its data is valid under concurrent write operations.
+            ret = self._locked_consume_from_request(spec_obj)
+            now = timeutils.utcnow()
+            # NOTE(sbauza): Objects are UTC tz-aware by default
+            self.updated = now.replace(tzinfo=iso8601.iso8601.Utc())
+            return ret
+
+        return _locked(self, spec_obj)
+
+    def _locked_consume_from_request(self, spec_obj):
+        """Raise exception ComputeResourcesUnavailable if consumption failed.
+        """
+        claim = claims.Claim(spec_obj, self, self.limits)
+
+        # Consume resources
+        self.free_ram_mb -= claim.memory_mb
+        self.free_disk_mb -= claim.disk_gb * 1024
+        self.vcpus_used += claim.vcpus
 
         # Track number of instances on host
         self.num_instances += 1
 
-        pci_requests = spec_obj.pci_requests
-        if pci_requests and self.pci_stats:
-            pci_requests = pci_requests.requests
-        else:
-            pci_requests = None
-
-        # Calculate the numa usage
-        host_numa_topology, _fmt = hardware.host_topology_and_format_from_host(
-                                self)
-        instance_numa_topology = spec_obj.numa_topology
-
-        spec_obj.numa_topology = hardware.numa_fit_instance_to_host(
-            host_numa_topology, instance_numa_topology,
-            limits=self.limits.get('numa_topology'),
-            pci_requests=pci_requests, pci_stats=self.pci_stats)
-        if pci_requests:
-            instance_cells = None
-            if spec_obj.numa_topology:
-                instance_cells = spec_obj.numa_topology.cells
-            self.pci_stats.apply_requests(pci_requests, instance_cells)
-
-        # NOTE(sbauza): Yeah, that's crap. We should get rid of all of those
-        # NUMA helpers because now we're 100% sure that spec_obj.numa_topology
-        # is an InstanceNUMATopology object. Unfortunately, since
-        # HostState.host_numa_topology is still limbo between an NUMATopology
-        # object (when updated by consume_from_request), a ComputeNode object
-        # (when updated by update_from_compute_node), we need to keep the call
-        # to get_host_numa_usage_from_instance until it's fixed (and use a
-        # temporary orphaned Instance object as a proxy)
-        instance = objects.Instance(numa_topology=spec_obj.numa_topology)
-
+        # Consume numa topology
+        spec_obj.numa_topology = claim.claimed_numa_topology
         self.numa_topology = hardware.get_host_numa_usage_from_instance(
-                self, instance)
+                self, spec_obj)
+
+        # Consume pci
+        if claim.pci_requests:
+            self.pci_stats.apply_requests(claim.pci_requests,
+                                          claim.instance_cells)
 
         # NOTE(sbauza): By considering all cases when the scheduler is called
         # and when consume_from_request() is run, we can safely say that there
         # is always an IO operation because we want to move the instance
         self.num_io_ops += 1
+        return claim
 
     def __repr__(self):
         return ("(%s, %s) ram:%s disk:%s io_ops:%s instances:%s" %
@@ -285,7 +276,7 @@ class HostManager(object):
 
     # Can be overridden in a subclass
     def host_state_cls(self, host, node, **kwargs):
-        return HostState(host, node, **kwargs)
+        return HostState(host, node)
 
     def __init__(self):
         self.host_state_map = {}
@@ -527,19 +518,17 @@ class HostManager(object):
             node = compute.hypervisor_hostname
             state_key = (host, node)
             host_state = self.host_state_map.get(state_key)
-            if host_state:
-                host_state.update_from_compute_node(compute)
-            else:
+            if not host_state:
                 host_state = self.host_state_cls(host, node, compute=compute)
                 self.host_state_map[state_key] = host_state
             # We force to update the aggregates info each time a new request
             # comes in, because some changes on the aggregates could have been
             # happening after setting this field for the first time
-            host_state.aggregates = [self.aggs_by_id[agg_id] for agg_id in
-                                     self.host_aggregates_map[
-                                         host_state.host]]
-            host_state.update_service(dict(service))
-            self._add_instance_info(context, compute, host_state)
+            host_state.update(compute,
+                              dict(service),
+                              self._get_aggregates_info(host),
+                              self._get_instance_info(context, compute))
+
             seen_nodes.add(state_key)
 
         # remove compute nodes from host_state_map if they are not active
@@ -552,8 +541,12 @@ class HostManager(object):
 
         return six.itervalues(self.host_state_map)
 
-    def _add_instance_info(self, context, compute, host_state):
-        """Adds the host instance info to the host_state object.
+    def _get_aggregates_info(self, host):
+        return [self.aggs_by_id[agg_id] for agg_id in
+                self.host_aggregates_map[host]]
+
+    def _get_instance_info(self, context, compute):
+        """Gets the host instance info from the compute host.
 
         Some older compute nodes may not be sending instance change updates to
         the Scheduler; other sites may disable this feature for performance
@@ -571,7 +564,7 @@ class HostManager(object):
             inst_list = objects.InstanceList.get_by_host(context, host_name)
             inst_dict = {instance.uuid: instance
                          for instance in inst_list.objects}
-        host_state.instances = inst_dict
+        return inst_dict
 
     def _recreate_instance_info(self, context, host_name):
         """Get the InstanceList for the specified host, and store it in the
