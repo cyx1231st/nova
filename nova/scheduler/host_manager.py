@@ -263,7 +263,7 @@ class HostState(object):
         # and when consume_from_request() is run, we can safely say that there
         # is always an IO operation because we want to move the instance
         self.num_io_ops += 1
-        return claim
+        return claim.to_dict()
 
     def __repr__(self):
         return ("(%s, %s) ram:%s disk:%s io_ops:%s instances:%s" %

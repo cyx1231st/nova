@@ -71,9 +71,9 @@ class SchedulerManager(manager.Manager):
         The result should be a list of dicts with 'host', 'nodename' and
         'limits' as keys.
         """
-        dests = self.driver.select_destinations(context, request_spec,
+        dests, claims = self.driver.select_destinations(context, request_spec,
             filter_properties)
-        return jsonutils.to_primitive(dests)
+        return jsonutils.to_primitive(dests), claims
 
     def update_aggregates(self, ctxt, aggregates):
         """Updates HostManager internal aggregates information.

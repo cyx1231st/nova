@@ -59,4 +59,4 @@ class Scheduler(object):
         :return: A list of dicts with 'host', 'nodename' and 'limits' as keys
             that satisfies the request_spec and filter_properties.
         """
-        return []
+        return [], []

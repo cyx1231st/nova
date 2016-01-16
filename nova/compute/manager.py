@@ -1854,7 +1854,7 @@ class ComputeManager(manager.Manager):
                      filter_properties, admin_password=None,
                      injected_files=None, requested_networks=None,
                      security_groups=None, block_device_mapping=None,
-                     node=None, limits=None):
+                     node=None, limits=None, claim=None):
 
         @utils.synchronized(instance.uuid)
         def _locked_do_build_and_run_instance(*args, **kwargs):
@@ -1868,6 +1868,7 @@ class ComputeManager(manager.Manager):
         # NOTE(danms): We spawn here to return the RPC worker thread back to
         # the pool. Since what follows could take a really long time, we don't
         # want to tie up RPC workers.
+        LOG.info(_LI("Received claim %s") % claim)
         utils.spawn_n(_locked_do_build_and_run_instance,
                       context, instance, image, request_spec,
                       filter_properties, admin_password, injected_files,

@@ -38,7 +38,7 @@ class Claim(claims.Claim):
 
     def __init__(self, spec_obj, host_state, limits=None):
         # Stash a copy of the request at the current point of time
-        self.spec_obj = spec_obj.obj_clone()
+        self.spec_obj = spec_obj
         self.host_state = host_state
         self.instance_cells = None
         self.claimed_numa_topology = None
@@ -73,7 +73,7 @@ class Claim(claims.Claim):
         return pci_requests
 
     def abort(self):
-        raise NotImplemented("There is no need to abort a claim in"
+        raise NotImplementedError("There is no need to abort a claim in"
                              " host state.")
 
     def _claim_test(self, resources, limits=None):
@@ -205,3 +205,18 @@ class Claim(claims.Claim):
                       '%(unit)s < requested %(requested)d %(unit)s') %
                       {'type': type_, 'free': free, 'unit': unit,
                        'requested': requested})
+
+    def to_dict(self):
+        ret = {}
+        ret['free_ram_mb'] = self.memory_mb
+        ret['free_disk_mb'] = self.disk_gb * 1024
+        ret['vcpus_used'] = self.vcpus
+        ret['num_instances'] = 1
+        ret['num_io_ops'] = 1
+        ret['pci_requests'] = self.pci_requests
+        ret['numa_topology'] = self.numa_topology
+
+        ret['request_id'] = self.spec_obj.id
+        ret['instance_id'] = self.spec_obj.instance_uuid
+
+        return ret

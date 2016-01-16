@@ -26,12 +26,11 @@ from six.moves import range
 
 import nova.conf
 from nova import exception
-from nova.i18n import _
+from nova.i18n import _, _LI
 from nova import objects
 from nova import rpc
 from nova.scheduler import driver
 from nova.scheduler import scheduler_options
-from nova.scheduler import scheduler_client
 
 
 CONF = nova.conf.CONF
@@ -58,7 +57,7 @@ class FilterScheduler(driver.Scheduler):
             dict(request_spec=spec_obj.to_legacy_request_spec_dict()))
 
         num_instances = spec_obj.num_instances
-        selected_hosts = self._schedule(context, spec_obj)
+        selected_hosts, claims = self._schedule(context, spec_obj)
 
         # Couldn't fulfill the request_spec
         if len(selected_hosts) < num_instances:
@@ -87,7 +86,9 @@ class FilterScheduler(driver.Scheduler):
         self.notifier.info(
             context, 'scheduler.select_destinations.end',
             dict(request_spec=spec_obj.to_legacy_request_spec_dict()))
-        return dests
+
+        LOG.info(_LI("Claims: %s") % claims)
+        return dests, claims
 
     def _get_configuration_options(self):
         """Fetch options dictionary. Broken out for testing."""
@@ -112,6 +113,7 @@ class FilterScheduler(driver.Scheduler):
         hosts = self._get_all_host_states(elevated)
 
         selected_hosts = []
+        claims = []
         num_instances = spec_obj.num_instances
         # NOTE(sbauza): Adding one field for any out-of-tree need
         spec_obj.config_options = config_options
@@ -130,18 +132,19 @@ class FilterScheduler(driver.Scheduler):
 
             LOG.debug("Weighed %(hosts)s", {'hosts': weighed_hosts})
 
-            chosen_host = self._select_host(spec_obj, weighed_hosts)
+            chosen_host, claim = self._select_host(spec_obj, weighed_hosts)
             if not chosen_host:
                 # Can't get any host locally, use the same logic with the empty
                 # get_filtered_hosts(...).
                 break
             selected_hosts.append(chosen_host)
+            claims.append(claim)
 
             if spec_obj.instance_group is not None:
                 spec_obj.instance_group.hosts.append(chosen_host.obj.host)
                 # hosts has to be not part of the updates when saving
                 spec_obj.instance_group.obj_reset_changes(['hosts'])
-        return selected_hosts
+        return selected_hosts, claims
 
     def _get_all_host_states(self, context):
         """Template method, so a subclass can implement caching."""
@@ -150,6 +153,7 @@ class FilterScheduler(driver.Scheduler):
     def _select_host(self, spec_obj, weighed_hosts):
         """Choose the appropriate host according to weighed hosts."""
         scheduler_host_subset_size = max(1, CONF.scheduler_host_subset_size)
+        claim = None
 
         while len(weighed_hosts) > 0:
             if scheduler_host_subset_size < len(weighed_hosts):
@@ -161,7 +165,7 @@ class FilterScheduler(driver.Scheduler):
             # Now consume the resources so the filter/weights
             # will change for the next instance.
             try:
-                chosen_host.obj.consume_from_request(spec_obj)
+                claim = chosen_host.obj.consume_from_request(spec_obj)
             except exception.ComputeResourcesUnavailable as e:
                 LOG.debug("Remove host: %(host)s because of consumption"
                         "failure %(failure)s.",
@@ -169,7 +173,7 @@ class FilterScheduler(driver.Scheduler):
                 weighed_hosts.remove(chosen_host)
             else:
                 LOG.debug("Selected host: %(host)s", {'host': chosen_host})
-                return chosen_host
+                return chosen_host, claim
 
         LOG.debug("No host available from request %s!", spec_obj)
-        return None
+        return None, None
