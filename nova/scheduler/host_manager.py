@@ -243,7 +243,8 @@ class HostState(object):
 
         # Consume resources
         self.free_ram_mb -= claim.memory_mb
-        self.free_disk_mb -= claim.disk_gb * 1024
+        # self.free_disk_mb -= claim.disk_gb * 1024
+        self.disk_mb_used += claim.disk_gb * 1024
         self.vcpus_used += claim.vcpus
 
         # Track number of instances on host

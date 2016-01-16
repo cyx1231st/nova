@@ -44,7 +44,10 @@ class DiskFilter(filters.BaseHostFilter):
             host_state, spec_obj)
 
         disk_mb_limit = total_usable_disk_mb * disk_allocation_ratio
-        used_disk_mb = total_usable_disk_mb - free_disk_mb
+        # NOTE(Yingxin): according to compute resource consumption, it is
+        # better to use host_state.disk_mb_used instead of:
+        # used_disk_mb = total_usable_disk_mb - free_disk_mb
+        used_disk_mb = host_state.disk_mb_used
         usable_disk_mb = disk_mb_limit - used_disk_mb
 
         if not usable_disk_mb >= requested_disk:

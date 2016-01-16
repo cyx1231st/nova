@@ -18,7 +18,7 @@ import bisect
 from oslo_log import log as logging
 
 from nova.compute import rpcapi as compute_rpcapi
-from nova.i18n import _LI, _LE
+from nova.i18n import _LI, _LE, _LW
 from nova import objects
 from nova import servicegroup
 
@@ -70,6 +70,14 @@ class SchedulerClients(object):
                 LOG.info(_LE("Keep non-exist compute %s") % old_key)
 
         for client in self.clients.values():
+            if client.host_state:
+                LOG.info(_LI("Host state on compute %(compute)s: %(state)s")
+                         % {'compute': client.host,
+                            'state': client.host_state})
+            else:
+                LOG.info(_LI("Host state on compute %s is unavailable")
+                         % client.host)
+
             client.sync(context, service_refs.get(client.host, None))
 
     def notify_scheduler(self, context, host_name):
@@ -129,6 +137,7 @@ class SchedulerClient(object):
         elif self.api.service_is_up(service):
             self.tmp = False
             if not self.host_state:
+                LOG.info(_LI("Compute %s is up without hoststate") % self.host)
                 self.refresh_state(context)
             else:
                 # normal situation
@@ -184,6 +193,7 @@ class SchedulerClient(object):
             else:
                 LOG.info(_LI("Updated state: %s") % self.host_state)
         else:
+            LOG.info(_LE("The commit comes without hoststate"))
             self.refresh_state(context, True)
 
     def disable(self):

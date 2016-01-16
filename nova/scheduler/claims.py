@@ -127,7 +127,8 @@ class Claim(claims.Claim):
         type_ = _("disk")
         unit = "GB"
         total = resources.total_usable_disk_gb
-        used = resources.total_usable_disk_gb - resources.free_disk_mb / 1024
+        # used = resources.total_usable_disk_gb - resources.free_disk_mb / 1024
+        used = resources.disk_mb_used
         requested = self.disk_gb
 
         return self._test(type_, unit, total, used, requested, limit)
@@ -208,15 +209,14 @@ class Claim(claims.Claim):
 
     def to_dict(self):
         ret = {}
-        ret['free_ram_mb'] = self.memory_mb
-        ret['free_disk_mb'] = self.disk_gb * 1024
+        ret['free_ram_mb'] = - self.memory_mb
+        ret['disk_mb_used'] = self.disk_gb * 1024
         ret['vcpus_used'] = self.vcpus
         ret['num_instances'] = 1
         ret['num_io_ops'] = 1
         ret['pci_requests'] = self.pci_requests
         ret['numa_topology'] = self.numa_topology
 
-        ret['request_id'] = self.spec_obj.id
         ret['instance_id'] = self.spec_obj.instance_uuid
 
         return ret

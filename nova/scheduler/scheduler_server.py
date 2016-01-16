@@ -90,6 +90,7 @@ class SchedulerServers(object):
         # return self.host_state, server_obj.seed
 
     def periodically_refresh_servers(self, context):
+        LOG.info(_LI("Report host state: %s") % self.host_state)
         service_refs = {service.host: service
                         for service in objects.ServiceList.get_by_binary(
                             context, 'nova-scheduler')}
