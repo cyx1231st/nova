@@ -83,7 +83,7 @@ class SchedulerServers(object):
         if not server_obj:
             server_obj = SchedulerServer(scheduler, self.api, self)
             self.servers[scheduler] = server_obj
-            LOG.info(_LW("Added temp server %s from report.") % scheduler)
+            LOG.info(_LW("Added new scheduler %s from request.") % scheduler)
 
         server_obj.refresh_state()
         return
@@ -103,13 +103,15 @@ class SchedulerServers(object):
             server_obj = SchedulerServer(
                     service_refs[new_key].host, self.api, self)
             self.servers[new_key] = server_obj
-            LOG.info(_LI("Added new server: %s") % new_key)
+            LOG.info(_LI("Added new scheduler %s from db.") % new_key)
 
         for old_key in old_keys:
             server_obj = self.servers[old_key]
             if server_obj.queue is None:
-                LOG.error(_LI("Remove server: %s") % old_key)
+                LOG.error(_LI("Remove non-exist scheduler %s") % old_key)
                 del self.servers[old_key]
+            else:
+                LOG.info(_LI("Keep non-exist scheduler %s") % old_key)
 
         for server in self.servers.values():
             server.sync(context, service_refs.get(server.host, None))
@@ -124,15 +126,16 @@ class SchedulerServer(object):
         self.tmp = False
         self.thread = None
         self.seed = random.randint(0, 1000000)
+        LOG.info(_LI("Seed %d") % self.seed)
 
     def _handle_tmp(self):
         if self.queue is not None:
             if self.tmp:
-                LOG.info(_LI("Keep service nova-scheduler %s!")
+                LOG.info(_LI("Keep scheduler %s!")
                          % self.host)
                 self.tmp = False
             else:
-                LOG.info(_LI("Service nova-scheduler %s is disabled!")
+                LOG.info(_LI("Disable scheduler %s!")
                          % self.host)
                 self.disable()
         else:
@@ -140,10 +143,10 @@ class SchedulerServer(object):
 
     def sync(self, context, service):
         if not service:
-            LOG.info(_LI("No db entry of nova-scheduler %s!") % self.host)
+            LOG.info(_LI("No service entry of scheduler %s!") % self.host)
             self._handle_tmp()
         elif service['disabled']:
-            LOG.info(_LI("Service nova-scheduler %s is disabled!")
+            LOG.info(_LI("Service scheduler %s is disabled!")
                      % self.host)
             self.disable()
         elif self.api.service_is_up(service):
@@ -152,10 +155,11 @@ class SchedulerServer(object):
                 if self.queue is None:
                     self.api.notify_scheduler(context, self.host)
         else:
+            LOG.info(_LI("Service scheduler %s is down!") % self.host)
             self._handle_tmp()
 
     def refresh_state(self):
-        LOG.info(_LI("scheduler %s is to be refreshed!") % self.host)
+        LOG.info(_LI("Scheduler %s is to be refreshed!") % self.host)
         self.disable()
 
         self.tmp = True
@@ -183,7 +187,7 @@ class SchedulerServer(object):
 
             self.seed = self.seed + 1
             if jobs[0] == "refresh":
-                LOG.info(_LI("scheduler %(host)s is refreshed at %(seed)d!")
+                LOG.info(_LI("Scheduler %(host)s is refreshed by %(seed)d!")
                          % {'host': self.host, 'seed': self.seed})
                 self.api.send_commit(context, self.manager.host_state,
                                      self.host, self.seed)

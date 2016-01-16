@@ -59,13 +59,15 @@ class SchedulerClients(object):
             client_obj = SchedulerClient(service_refs[new_key].host,
                                          self.api)
             self.clients[new_key] = client_obj
-            LOG.info(_LI("Added new client: %s") % new_key)
+            LOG.info(_LI("Added new compute %s from db.") % new_key)
 
         for old_key in old_keys:
             client_obj = self.clients[old_key]
             if not client_obj.host_state:
-                LOG.error(_LE("Remove client: %s") % old_key)
+                LOG.error(_LE("Remove non-exist compute %s") % old_key)
                 del self.clients[old_key]
+            else:
+                LOG.info(_LE("Keep non-exist compute %s") % old_key)
 
         for client in self.clients.values():
             client.sync(context, service_refs.get(client.host, None))
@@ -76,7 +78,7 @@ class SchedulerClients(object):
         if not client_obj:
             client_obj = SchedulerClient(host_name, self.api)
             self.clients[host_name] = client_obj
-            LOG.info(_LI("Added temp client %s from notification.")
+            LOG.info(_LI("Added new compute %s from notification.")
                         % host_name)
         client_obj.refresh_state(context, True)
 
@@ -87,7 +89,7 @@ class SchedulerClients(object):
         if not client_obj:
             client_obj = SchedulerClient(compute, self.api)
             self.clients[compute] = client_obj
-            LOG.info(_LI("Added temp client %s from notification.")
+            LOG.error(_LE("Added new compute %s from commit.")
                         % compute)
         client_obj.process_commit(context, commit, seed)
 
@@ -106,11 +108,11 @@ class SchedulerClient(object):
     def _handle_tmp(self):
         if self.host_state:
             if self.tmp:
-                LOG.info(_LI("Keep service nova-compute %s!")
+                LOG.info(_LI("Keep compute %s!")
                         % self.host)
                 self.tmp = False
             else:
-                LOG.info(_LI("Service nova-compute %s is disabled!")
+                LOG.info(_LI("Disable compute %s!")
                         % self.host)
                 self.disable()
         else:
@@ -118,10 +120,10 @@ class SchedulerClient(object):
 
     def sync(self, context, service):
         if not service:
-            LOG.info(_LI("No db entry of nova-compute %s!") % self.host)
+            LOG.info(_LI("No service entry of compute %s!") % self.host)
             self._handle_tmp()
         elif service['disabled']:
-            LOG.info(_LI("Service nova-compute %s is disabled!")
+            LOG.info(_LI("Service compute %s is disabled!")
                         % self.host)
             self.disable()
         elif self.api.service_is_up(service):
@@ -132,16 +134,16 @@ class SchedulerClient(object):
                 # normal situation
                 pass
         else:
-            # is down in db
+            LOG.info(_LI("Service compute %s is down!") % self.host)
             self._handle_tmp()
 
     def refresh_state(self, context, tmp=False):
-        LOG.info(_LI("Client %s is to be refreshed!") % self.host)
+        LOG.info(_LI("Compute %s is to be refreshed!") % self.host)
         self.api.report_host_state(context, self.host)
 
     def process_commit(self, context, commit, seed):
         if isinstance(commit, objects.HostState):
-            LOG.info(_LI("Client %s is refreshed!") % self.host)
+            LOG.info(_LI("Compute %s is refreshed!") % self.host)
             self.host_state = commit
             self.seed = seed
             return
@@ -151,17 +153,17 @@ class SchedulerClient(object):
             if seed <= self.seed:
                 index = bisect.bisect_left(self.window, seed)
                 if seed == self.seed or self.window[index] != seed:
-                    LOG.error(_LE("Old commit %d, ignore!") % seed)
+                    LOG.error(_LE("Old commit#%d, ignore!") % seed)
                     return
                 else:
-                    LOG.info(_LI("Found a lost commit %d!") % seed)
+                    LOG.info(_LI("A lost commit#%d!") % seed)
                     del self.window[index]
             elif seed == self.seed + 1:
                 self.seed = seed
             else:
                 if seed - self.seed > self.window_max:
                     LOG.error(_LE("A gient gap between %(from)d and %(to)d, "
-                        "abort commit!") % {'from': self.seed, 'to': seed})
+                        "refresh state!") % {'from': self.seed, 'to': seed})
                     self.refresh_state(context)
                     return
                 else:
@@ -179,7 +181,7 @@ class SchedulerClient(object):
 
             success = self.host_state.process_commit(commit)
             if not success:
-                LOG.info(_LI("HostState doesn't match."))
+                LOG.info(_LI("Warn: HostState doesn't match."))
             else:
                 LOG.info(_LI("Updated state: %s") % self.host_state)
         else:
