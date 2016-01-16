@@ -180,15 +180,18 @@ class SchedulerServer(object):
             jobs.append(self.queue.get())
             for i in range(self.queue.qsize(), 0, -1):
                 jobs.append(self.queue.get_nowait())
-            LOG.info(_LI("Send commits to %(scheduler)s: %(commit)s")
-                    % {'scheduler': self.host, 'commit': jobs})
 
             if jobs[0] == "refresh":
-                LOG.info(_LI("scheduler %s is refreshed!") % self.host)
+                LOG.info(_LI("scheduler %(host)s is refreshed at %(seed)d!")
+                         % {'host': self.host, 'seed': self.seed})
                 self.api.send_commit(context, self.manager.host_state,
                                      self.host, self.seed)
             else:
                 self.seed = self.seed + 1
+                LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: %(commit)s")
+                         % {'scheduler': self.host,
+                            'commit': jobs,
+                            'seed': self.seed})
                 self.api.send_commit(context, jobs, self.host, self.seed)
 
     def disable(self):
