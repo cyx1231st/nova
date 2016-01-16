@@ -124,7 +124,7 @@ class HostState(base.NovaObject):
                      }
 
     def update_from_compute(self, context, compute):
-        new_version = self.micro_version + 1
+        new_version = self.micro_version
         new_state = HostState.from_primitives(
                 context, compute, version=new_version)
         commit = {}
