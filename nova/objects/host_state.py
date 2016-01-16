@@ -101,7 +101,7 @@ class HostState(base.NovaObject):
         state._from_compute(compute)
         return state
 
-    _special = {'numa_topology', 'pci_stats'}
+    _special = {'numa_topology', 'pci_stats', 'metrics'}
     _integer_fields = {'total_usable_ram_mb',
                        'free_ram_mb',
                        'total_usable_disk_gb',
@@ -118,7 +118,6 @@ class HostState(base.NovaObject):
                      'hypervisor_version',
                      'hypervisor_hostname',
                      'supported_instances',
-                     'metrics',
                      'cpu_allocation_ratio',
                      'ram_allocation_ratio',
                      }
@@ -144,6 +143,13 @@ class HostState(base.NovaObject):
                 setattr(self, field, new)
                 commit[field] = new
 
+        new = new_state.metrics
+        new_list = new.to_list()
+        old_list = self.metrics.to_list()
+        if new_list != old_list:
+            self.metrics = new
+            commit['metrics'] = new
+
         # TODO() numa_topology, pci_stats
 
         if commit:
@@ -168,6 +174,9 @@ class HostState(base.NovaObject):
             reset_keys = keys & self._reset_fields
             for field in reset_keys:
                 setattr(self, field, item[field])
+
+            if 'metrics' in keys:
+                setattr(self, 'metrics', item['metrics'])
 
             # TODO() numa_topology, pci_stats
 
