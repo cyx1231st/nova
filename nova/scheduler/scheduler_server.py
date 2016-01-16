@@ -147,9 +147,10 @@ class SchedulerServer(object):
                      % self.host)
             self.disable()
         elif self.api.service_is_up(service):
-            self.tmp = False
-            if self.queue is None:
-                self.api.notify_scheduler(context, self.host)
+            if self.manager.host_state:
+                self.tmp = False
+                if self.queue is None:
+                    self.api.notify_scheduler(context, self.host)
         else:
             self._handle_tmp()
 
@@ -188,7 +189,8 @@ class SchedulerServer(object):
                                      self.host, self.seed)
             else:
                 self.seed = self.seed + 1
-                LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: %(commit)s")
+                LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
+                             "%(commit)s")
                          % {'scheduler': self.host,
                             'commit': jobs,
                             'seed': self.seed})
