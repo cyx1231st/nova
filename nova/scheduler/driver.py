@@ -39,6 +39,11 @@ class Scheduler(object):
         self.host_manager = importutils.import_object(
                 CONF.scheduler_host_manager)
         self.servicegroup_api = servicegroup.API()
+        self.clients = None
+    
+    def init_compute_clients(self, clients):
+        self.clients = clients
+        self.host_manager.init_compute_clients(clients)
 
     def run_periodic_tasks(self, context):
         """Manager calls this so drivers can perform periodic tasks."""

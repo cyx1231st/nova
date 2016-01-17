@@ -44,6 +44,7 @@ class SchedulerClients(object):
         self.host = host
         self.api = APIProxy(host)
         self.clients = {}
+        self.ready_states = {}
 
     def periodically_refresh_clients(self, context):
         service_refs = {service.host: service
@@ -57,7 +58,7 @@ class SchedulerClients(object):
 
         for new_key in new_keys:
             client_obj = SchedulerClient(service_refs[new_key].host,
-                                         self.api)
+                                         self.api, self)
             self.clients[new_key] = client_obj
             LOG.info(_LI("Added new compute %s from db.") % new_key)
 
@@ -81,7 +82,7 @@ class SchedulerClients(object):
         LOG.info(_LI("Get notified from host %s") % host_name)
         client_obj = self.clients.get(host_name, None)
         if not client_obj:
-            client_obj = SchedulerClient(host_name, self.api)
+            client_obj = SchedulerClient(host_name, self.api, self)
             self.clients[host_name] = client_obj
             LOG.info(_LI("Added new compute %s from notification.")
                         % host_name)
@@ -92,17 +93,21 @@ class SchedulerClients(object):
                  % {"commit": commit, "compute": compute, "seed": seed})
         client_obj = self.clients.get(compute, None)
         if not client_obj:
-            client_obj = SchedulerClient(compute, self.api)
+            client_obj = SchedulerClient(compute, self.api, self)
             self.clients[compute] = client_obj
             LOG.error(_LE("Added new compute %s from commit.")
                         % compute)
         client_obj.process_commit(context, commit, seed)
 
+    def get_all_host_states(self):
+        return self.ready_states.values()
+
 
 class SchedulerClient(object):
-    def __init__(self, host, api):
+    def __init__(self, host, api, manager):
         self.host = host
         self.api = api
+        self.manager = manager
         # the min window is 1
         self.window_max = 7
         self.host_state = None
@@ -151,6 +156,7 @@ class SchedulerClient(object):
             LOG.info(_LI("Compute %s is refreshed!") % self.host)
             self.host_state = commit
             self.seed = seed
+            self.manager.ready_states[self.host] = self.host_state
             return
 
         if self.host_state:
@@ -198,3 +204,4 @@ class SchedulerClient(object):
         self.tmp = False
         self.seed = None
         self.window = []
+        self.manager.ready_states.pop(self.host, None)

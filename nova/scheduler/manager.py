@@ -48,6 +48,7 @@ class SchedulerManager(manager.Manager):
         super(SchedulerManager, self).__init__(service_name='scheduler',
                                                *args, **kwargs)
         self.clients = scheduler_client.SchedulerClients(self.host)
+        self.driver.init_compute_clients(self.clients)
 
     # @periodic_task.periodic_task
     # def _expire_reservations(self, context):

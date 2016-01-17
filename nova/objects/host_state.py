@@ -41,10 +41,12 @@ class HostState(base.NovaObject):
         # 'pci_stats': fields.ObjectField('pci_stats.PciDeviceStats',
         #                                 nullable=True),
 
+        'host': fields.StringField(nullable=True),
         'host_ip': fields.IPAddressField(nullable=True),
         'hypervisor_type': fields.StringField(),
         'hypervisor_version': fields.IntegerField(),
         'hypervisor_hostname': fields.StringField(nullable=True),
+        'cpu_info': fields.StringField(nullable=True),
         'supported_instances': fields.ListOfListOfStringsField(),
 
         'num_instances': fields.IntegerField(),
@@ -73,10 +75,12 @@ class HostState(base.NovaObject):
         # self.pci_stats = pci_stats.PciDeviceStats(
         #        compute.pci_device_pools)
 
+        self.host = compute.host
         self.host_ip = compute.host_ip
         self.hypervisor_type = compute.hypervisor_type
         self.hypervisor_version = compute.hypervisor_version
         self.hypervisor_hostname = compute.hypervisor_hostname
+        self.cpu_info = compute.cpu_info
         if compute.supported_hv_specs:
             self.supported_instances = [spec.to_list() for spec
                                         in compute.supported_hv_specs]
@@ -113,10 +117,12 @@ class HostState(base.NovaObject):
                        'num_io_ops',
                        'micro_version',
                        }
-    _reset_fields = {'host_ip',
+    _reset_fields = {'host',
+                     'host_ip',
                      'hypervisor_type',
                      'hypervisor_version',
                      'hypervisor_hostname',
+                     'cpu_info',
                      'supported_instances',
                      'cpu_allocation_ratio',
                      'ram_allocation_ratio',

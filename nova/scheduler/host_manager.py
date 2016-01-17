@@ -75,6 +75,49 @@ class ReadOnlyDict(IterableUserDict):
         raise TypeError()
 
 
+class SharedHostState(object):
+    def __init__(self, state, aggregates, inst_dict):
+        self.state = state
+        self.aggregates = aggregates or []
+        self.instances = inst_dict or {}
+        self.limits = {}
+        self.host = state.host
+        self.nodename = state.hypervisor_hostname
+
+        # TODO(Yingxin): remove after implemented
+        self.pci_stats = pci_stats.PciDeviceStats()
+        self.numa_topology = None
+
+    def __getattr__(self, name):
+        return getattr(self.state, name)
+
+    def __setattr__(self, name, value):
+        setattr(self.state, name, value)
+
+    def consume_from_request(self, spec_obj):
+        claim = claims.Claim(spec_obj, self, self.limits)
+        claim = claim.to_dict()
+
+        self.free_ram_mb += claim['free_ram_mb']
+        self.disk_mb_used += claim['disk_mb_used']
+        self.vcpus_used += claim['vcpus_used']
+        self.num_instances += claim['num_instances']
+        spec_obj.numa_topology = claim['numa_topology']
+        self.numa_topology = hardware.get_host_numa_usage_from_instance(
+                self, spec_obj)
+        if claim['pci_requests']:
+            self.pci_stats.apply_requests(claim['pci_requests'],
+                                          claim['numa_topology'].cells)
+        self.num_io_ops += claim['num_io_ops']
+
+        return claim
+
+    def __repr__(self):
+        return ("(%s, %s) ram:%s disk:%s io_ops:%s instances:%s" %
+                (self.host, self.nodename, self.free_ram_mb, self.free_disk_mb,
+                 self.num_io_ops, self.num_instances))
+
+
 class HostState(object):
     """Mutable and immutable information tracked for a host.
     This is an attempt to remove the ad-hoc data structures
@@ -302,6 +345,10 @@ class HostManager(object):
         self._instance_info = {}
         if self.tracks_instance_changes:
             self._init_instance_info()
+        self.clients = None
+    
+    def init_compute_clients(self, clients):
+        self.clients = clients
 
     def _load_filters(self):
         return CONF.scheduler_default_filters
@@ -501,46 +548,14 @@ class HostManager(object):
         in HostState are pre-populated and adjusted based on data in the db.
         """
 
-        service_refs = {service.host: service
-                        for service in objects.ServiceList.get_by_binary(
-                            context, 'nova-compute')}
-        # Get resource usage across the available compute nodes:
-        compute_nodes = objects.ComputeNodeList.get_all(context)
-        seen_nodes = set()
-        for compute in compute_nodes:
-            service = service_refs.get(compute.host)
-
-            if not service:
-                LOG.warning(_LW(
-                    "No compute service record found for host %(host)s"),
-                    {'host': compute.host})
-                continue
-            host = compute.host
-            node = compute.hypervisor_hostname
-            state_key = (host, node)
-            host_state = self.host_state_map.get(state_key)
-            if not host_state:
-                host_state = self.host_state_cls(host, node, compute=compute)
-                self.host_state_map[state_key] = host_state
-            # We force to update the aggregates info each time a new request
-            # comes in, because some changes on the aggregates could have been
-            # happening after setting this field for the first time
-            host_state.update(compute,
-                              dict(service),
-                              self._get_aggregates_info(host),
-                              self._get_instance_info(context, compute))
-
-            seen_nodes.add(state_key)
-
-        # remove compute nodes from host_state_map if they are not active
-        dead_nodes = set(self.host_state_map.keys()) - seen_nodes
-        for state_key in dead_nodes:
-            host, node = state_key
-            LOG.info(_LI("Removing dead compute node %(host)s:%(node)s "
-                         "from scheduler"), {'host': host, 'node': node})
-            del self.host_state_map[state_key]
-
-        return six.itervalues(self.host_state_map)
+        states = self.clients.get_all_host_states()
+        ret = []
+        for state in states:
+            ret.append(
+                    SharedHostState(state,
+                                    self._get_aggregates_info(state.host),
+                                    self._get_instance_info(state.nodename)))
+        return ret
 
     def _get_aggregates_info(self, host):
         return [self.aggs_by_id[agg_id] for agg_id in
