@@ -74,9 +74,6 @@ class SchedulerClients(object):
                 LOG.info(_LI("Host state on compute %(compute)s: %(state)s")
                          % {'compute': client.host,
                             'state': client.host_state})
-            else:
-                LOG.info(_LI("Host state on compute %s is unavailable")
-                         % client.host)
 
             client.sync(context, service_refs.get(client.host, None))
 
