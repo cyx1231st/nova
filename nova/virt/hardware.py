@@ -1210,7 +1210,7 @@ def instance_topology_from_instance(instance):
             except exception.NumaTopologyNotFound:
                 instance_numa_topology = None
         else:
-            instance_numa_topology = None
+            instance_numa_topology = instance
 
     if instance_numa_topology:
         if isinstance(instance_numa_topology, six.string_types):

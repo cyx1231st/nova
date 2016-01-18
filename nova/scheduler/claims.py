@@ -49,28 +49,43 @@ class Claim(claims.Claim):
 
     @property
     def disk_gb(self):
-        return self.spec_obj.root_gb + self.spec_obj.ephemeral_gb
+        if isinstance(self.spec_obj, dict):
+            return self.spec_obj['disk_mb_used'] / 1024
+        else:
+            return self.spec_obj.root_gb + self.spec_obj.ephemeral_gb
 
     @property
     def memory_mb(self):
-        return self.spec_obj.memory_mb
+        if isinstance(self.spec_obj, dict):
+            return - self.spec_obj['free_ram_mb']
+        else:
+            return self.spec_obj.memory_mb
 
     @property
     def vcpus(self):
-        return self.spec_obj.vcpus
+        if isinstance(self.spec_obj, dict):
+            return self.spec_obj['vcpus_used']
+        else:
+            return self.spec_obj.vcpus
 
     @property
     def numa_topology(self):
-        return self.spec_obj.numa_topology
+        if isinstance(self.spec_obj, dict):
+            return self.spec_obj['numa_topology']
+        else:
+            return self.spec_obj.numa_topology
 
     @property
     def pci_requests(self):
-        pci_requests = self.spec_obj.pci_requests
-        if pci_requests and self.host_state.pci_stats:
-            pci_requests = pci_requests.requests
+        if isinstance(self.spec_obj, dict):
+            return self.spec_obj['pci_requests']
         else:
-            pci_requests = None
-        return pci_requests
+            pci_requests = self.spec_obj.pci_requests
+            if pci_requests and self.host_state.pci_stats:
+                pci_requests = pci_requests.requests
+            else:
+                pci_requests = None
+            return pci_requests
 
     def abort(self):
         raise NotImplementedError("There is no need to abort a claim in"
@@ -208,15 +223,20 @@ class Claim(claims.Claim):
                        'requested': requested})
 
     def to_dict(self):
-        ret = {}
-        ret['free_ram_mb'] = - self.memory_mb
-        ret['disk_mb_used'] = self.disk_gb * 1024
-        ret['vcpus_used'] = self.vcpus
-        ret['num_instances'] = 1
-        ret['num_io_ops'] = 1
-        ret['pci_requests'] = self.pci_requests
-        ret['numa_topology'] = self.numa_topology
+        if isinstance(self.spec_obj, dict):
+            self.spec_obj
+        else:
+            ret = {}
+            ret['free_ram_mb'] = - self.memory_mb
+            ret['disk_mb_used'] = self.disk_gb * 1024
+            ret['vcpus_used'] = self.vcpus
+            ret['num_instances'] = 1
+            ret['num_io_ops'] = 1
+            ret['pci_requests'] = self.pci_requests
+            ret['numa_topology'] = self.numa_topology
 
-        ret['instance_id'] = self.spec_obj.instance_uuid
+            ret['instance_id'] = self.spec_obj.instance_uuid
+            ret['node'] = self.host_state.nodename
+            ret['host'] = self.host_state.host
 
-        return ret
+            return ret

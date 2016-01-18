@@ -18,6 +18,7 @@ import random
 from oslo_log import log as logging
 
 import nova
+from nova import exception
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
 from nova.scheduler import client as scheduler_client
@@ -54,6 +55,19 @@ class SchedulerServers(object):
         self.host_state = None
         self.host = host
         self.api = APIProxy(host)
+
+    def claim(self, claim):
+        try:
+            self.host_state.claim(claim)
+        except exception.ComputeResourcesUnavailable as e:
+            # todo() abort
+            server_obj = self.servers.get(claim['host'], None)
+            if server_obj:
+                server_obj.send_claim(claim, False)
+            raise e
+        self.host_state.process_claim(claim, True)
+        for server in self.servers:
+            server.send_claim(claim, True)
 
     def update_from_compute(self, context, compute):
         if not self.host_state:
@@ -140,6 +154,11 @@ class SchedulerServer(object):
                 self.disable()
         else:
             self.tmp = False
+
+    def send_claim(self, claim, proceed):
+        if self.queue is not None:
+            claim['proceed'] = proceed
+            self.queue.put(claim)
 
     def sync(self, context, service):
         if not service:

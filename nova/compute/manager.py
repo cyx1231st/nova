@@ -1873,7 +1873,7 @@ class ComputeManager(manager.Manager):
                       context, instance, image, request_spec,
                       filter_properties, admin_password, injected_files,
                       requested_networks, security_groups,
-                      block_device_mapping, node, limits)
+                      block_device_mapping, node, limits, claim)
 
     @hooks.add_hook('build_instance')
     @wrap_exception()
@@ -1883,7 +1883,7 @@ class ComputeManager(manager.Manager):
     def _do_build_and_run_instance(self, context, instance, image,
             request_spec, filter_properties, admin_password, injected_files,
             requested_networks, security_groups, block_device_mapping,
-            node=None, limits=None):
+            node=None, limits=None, claim=None):
 
         try:
             LOG.debug('Starting instance...', context=context,
@@ -1916,7 +1916,7 @@ class ComputeManager(manager.Manager):
                 self._build_and_run_instance(context, instance, image,
                         decoded_files, admin_password, requested_networks,
                         security_groups, block_device_mapping, node, limits,
-                        filter_properties)
+                        filter_properties, claim)
             LOG.info(_LI('Took %0.2f seconds to build instance.'),
                      timer.elapsed(), instance=instance)
             return build_results.ACTIVE
@@ -1998,12 +1998,13 @@ class ComputeManager(manager.Manager):
 
     def _build_and_run_instance(self, context, instance, image, injected_files,
             admin_password, requested_networks, security_groups,
-            block_device_mapping, node, limits, filter_properties):
+            block_device_mapping, node, limits, filter_properties, claim):
 
         image_name = image.get('name')
         self._notify_about_instance_usage(context, instance, 'create.start',
                 extra_usage_info={'image_name': image_name})
         try:
+            self.scheduler_servers.claim(claim)
             rt = self._get_resource_tracker(node)
             with rt.instance_claim(context, instance, limits):
                 # NOTE(russellb) It's important that this validation be done

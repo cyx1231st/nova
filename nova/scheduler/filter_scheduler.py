@@ -66,8 +66,8 @@ class FilterScheduler(driver.Scheduler):
             # refreshed according to database in next schedule, and release
             # the resource consumed by instance in the process of selecting
             # host.
-            for host in selected_hosts:
-                host.obj.updated = None
+            #for host in selected_hosts:
+            #    host.obj.updated = None
 
             # Log the details but don't put those into the reason since
             # we don't want to give away too much information about our
@@ -78,6 +78,7 @@ class FilterScheduler(driver.Scheduler):
                        'num_instances': num_instances})
 
             reason = _('There are not enough hosts available.')
+            self.clients.abort_claims(claims)
             raise exception.NoValidHost(reason=reason)
 
         dests = [dict(host=host.obj.host, nodename=host.obj.nodename,
@@ -133,6 +134,7 @@ class FilterScheduler(driver.Scheduler):
             LOG.debug("Weighed %(hosts)s", {'hosts': weighed_hosts})
 
             chosen_host, claim = self._select_host(spec_obj, weighed_hosts)
+            claim['from'] = self.clients.host
             if not chosen_host:
                 # Can't get any host locally, use the same logic with the empty
                 # get_filtered_hosts(...).
@@ -166,6 +168,7 @@ class FilterScheduler(driver.Scheduler):
             # will change for the next instance.
             try:
                 claim = chosen_host.obj.consume_from_request(spec_obj)
+                self.clients.track_claim(claim)
             except exception.ComputeResourcesUnavailable as e:
                 LOG.debug("Remove host: %(host)s because of consumption"
                         "failure %(failure)s.",

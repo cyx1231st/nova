@@ -18,7 +18,7 @@ import bisect
 from oslo_log import log as logging
 
 from nova.compute import rpcapi as compute_rpcapi
-from nova.i18n import _LI, _LE, _LW
+from nova.i18n import _LI, _LE
 from nova import objects
 from nova import servicegroup
 
@@ -102,6 +102,22 @@ class SchedulerClients(object):
     def get_all_host_states(self):
         return self.ready_states.values()
 
+    def abort_claims(self, host, claim):
+        client_obj = self.clients.get(host, None)
+        if not client_obj:
+            LOG.error(_LE("Missing compute %(host)s to abort claim %(claim)s!")
+                      % {'host': host, 'claim': claim})
+            return
+        client_obj.abort_claims([claim])
+
+    def track_claim(self, claim):
+        client_obj = self.clients.get(claim['host'], None)
+        if not client_obj:
+            LOG.error(_LE("Missing compute %(host)s to track claim %(claim)s!")
+                      % {'host': claim['host'], 'claim': claim})
+            return
+        client_obj.track_claim(claim)
+
 
 class SchedulerClient(object):
     def __init__(self, host, api, manager):
@@ -110,10 +126,13 @@ class SchedulerClient(object):
         self.manager = manager
         # the min window is 1
         self.window_max = 7
+
         self.host_state = None
         self.tmp = False
         self.seed = None
         self.window = None
+        self.claims = None
+        self.old_claims = None
 
     def _handle_tmp(self):
         if self.host_state:
@@ -143,6 +162,11 @@ class SchedulerClient(object):
                 self.refresh_state(context)
             else:
                 # normal situation
+                timeout_claims = self.old_claims.values()
+                LOG.error(_LE("Time out claims %s") % timeout_claims)
+                self.abort_claims(timeout_claims)
+                self.old_claims = self.claims
+                self.claims = {}
                 pass
         else:
             self._handle_tmp()
@@ -157,6 +181,9 @@ class SchedulerClient(object):
             self.host_state = commit
             self.seed = seed
             self.manager.ready_states[self.host] = self.host_state
+            self.window = []
+            self.claims = {}
+            self.old_claims = {}
             return
 
         if self.host_state:
@@ -190,7 +217,40 @@ class SchedulerClient(object):
                     self.refresh_state(context)
                     return
 
-            success = self.host_state.process_commit(commit)
+            success = True
+            for item in commit:
+                if 'version_expected' in item:
+                    success = self.host_state.process_commit(commit)
+                elif 'instance_uuid' in item:
+                    instance_uuid = item['instance_uuid']
+                    process = item.pop('process', True)
+                    if instance_uuid is None:
+                        self.host_state.process_claim(item, process)
+                    else:
+                        in_track = False
+                        if instance_uuid in self.claims:
+                            del self.claims[instance_uuid]
+                            in_track = True
+                        if instance_uuid in self.old_claims:
+                            del self.old_claims[instance_uuid]
+                            in_track = True
+
+                        if in_track and not process:
+                            LOG.info(_LI("Decision failure for instance %s!")
+                                     % instance_uuid)
+                            self.host_state.process_claim(item, process)
+                        elif in_track and process:
+                            LOG.info(_LI("Decision success for instance %s!")
+                                     % instance_uuid)
+                        elif not in_track and not process:
+                            LOG.error(_LE("Outdated decision failure for "
+                                          "instance %s!") % instance_uuid)
+                        else:
+                            LOG.error(_LE("Outdated decision success for "
+                                          "instance %s!") % instance_uuid)
+                            self.host_state.process_claim(item, process)
+                else:
+                    LOG.error(_LE("Unable to handle commit %s!") % item)
             if not success:
                 LOG.info(_LI("Warn: HostState doesn't match."))
             else:
@@ -199,9 +259,30 @@ class SchedulerClient(object):
             LOG.info(_LE("The commit comes without hoststate"))
             self.refresh_state(context, True)
 
+    def abort_claims(self, claims):
+        for claim in claims:
+            do_abort = False
+            if claim['instance_uuid'] in self.claims:
+                del self.claims[claim['instance_uuid']]
+                do_abort = True
+            if claim['instance_uuid'] in self.old_claims:
+                del self.old_claims[claim['instance_uuid']]
+                do_abort = True
+
+            if do_abort:
+                LOG.info(_LI("Abort claim %s!") % claim)
+                self.host_state.process_claim(claim, False)
+            else:
+                LOG.error(_LE("Claim %s not found, abort abort!") % claim)
+
+    def track_claim(self, claim):
+        self.claims[claim['instance_uuid']] = claim
+
     def disable(self):
         self.host_state = None
         self.tmp = False
         self.seed = None
-        self.window = []
+        self.window = None
         self.manager.ready_states.pop(self.host, None)
+        self.claims = None
+        self.old_claims = None

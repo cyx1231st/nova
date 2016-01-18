@@ -38,8 +38,7 @@ class HostState(base.NovaObject):
         'vcpus_used': fields.IntegerField(),
 
         'numa_topology': fields.StringField(nullable=True),
-        # 'pci_stats': fields.ObjectField('pci_stats.PciDeviceStats',
-        #                                 nullable=True),
+        'pci_stats': fields.StringField(nullable=True),
 
         'host': fields.StringField(nullable=True),
         'host_ip': fields.IPAddressField(nullable=True),
@@ -72,6 +71,7 @@ class HostState(base.NovaObject):
         self.vcpus_used = compute.vcpus_used
 
         self.numa_topology = compute.numa_topology
+        self.pci_stats = None
         # self.pci_stats = pci_stats.PciDeviceStats(
         #        compute.pci_device_pools)
 
@@ -105,7 +105,7 @@ class HostState(base.NovaObject):
         state._from_compute(compute)
         return state
 
-    _special = {'numa_topology', 'pci_stats', 'metrics'}
+    _special = {'pci_stats', 'metrics'}
     _integer_fields = {'total_usable_ram_mb',
                        'free_ram_mb',
                        'total_usable_disk_gb',
@@ -126,6 +126,7 @@ class HostState(base.NovaObject):
                      'supported_instances',
                      'cpu_allocation_ratio',
                      'ram_allocation_ratio',
+                     'numa_topology',
                      }
 
     def update_from_compute(self, context, compute):
@@ -156,7 +157,8 @@ class HostState(base.NovaObject):
             self.metrics = new
             commit['metrics'] = new
 
-        # TODO() numa_topology, pci_stats
+        # TODO() proceed pci_stats
+        # TODO() increment numa_topology
 
         if commit:
             commit['micro_version'] = 1
@@ -170,23 +172,52 @@ class HostState(base.NovaObject):
 
     def process_commit(self, commit):
         result = True
-        for item in commit:
-            keys = set(item.keys())
+        item = commit
 
-            changed_keys = keys & self._integer_fields
-            for field in changed_keys:
-                setattr(self, field, getattr(self, field) + item[field])
+        keys = set(item.keys())
 
-            reset_keys = keys & self._reset_fields
-            for field in reset_keys:
-                setattr(self, field, item[field])
+        changed_keys = keys & self._integer_fields
+        for field in changed_keys:
+            setattr(self, field, getattr(self, field) + item[field])
 
-            if 'metrics' in keys:
-                setattr(self, 'metrics', item['metrics'])
+        reset_keys = keys & self._reset_fields
+        for field in reset_keys:
+            setattr(self, field, item[field])
 
-            # TODO() numa_topology, pci_stats
+        if 'metrics' in keys:
+            setattr(self, 'metrics', item['metrics'])
 
-            if self.micro_version != item['version_expected']:
-                result = False
+        # TODO() pci_stats
+        # TODO() increment numa_topology
+
+        if self.micro_version != item['version_expected']:
+            result = False
 
         return result
+
+    def claim(self, req):
+        claim = claims.Claim(spec_obj, self.state, self.limits)
+        return claim.to_dict()
+
+    def process_claim(self, claim, apply_claim):
+        # TODO() apply pci_requests and cells to pci_stats
+        # if claim['pci_requests']:
+        #     self.pci_stats.apply_requests(claim['pci_requests'],
+        #                                   claim['numa_topology'].cells)
+
+        if apply_claim:
+            self.free_ram_mb += claim['free_ram_mb']
+            self.disk_mb_used += claim['disk_mb_used']
+            self.vcpus_used += claim['vcpus_used']
+            self.num_instances += claim['num_instances']
+            self.num_io_ops += claim['num_io_ops']
+            self.numa_topology = hardware.get_host_numa_usage_from_instance(
+                    self, claim['numa_topology'])
+        else:
+            self.free_ram_mb -= claim['free_ram_mb']
+            self.disk_mb_used -= claim['disk_mb_used']
+            self.vcpus_used -= claim['vcpus_used']
+            self.num_instances -= claim['num_instances']
+            self.num_io_ops -= claim['num_io_ops']
+            self.numa_topology = hardware.get_host_numa_usage_from_instance(
+                    self, claim['numa_topology'], True)

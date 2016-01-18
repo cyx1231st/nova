@@ -33,7 +33,7 @@ import six
 import nova.conf
 from nova import context as context_module
 from nova import exception
-from nova.i18n import _LI, _LW
+from nova.i18n import _LI, _LW, _LE
 from nova import objects
 from nova.pci import stats as pci_stats
 from nova.scheduler import claims
@@ -86,29 +86,15 @@ class SharedHostState(object):
 
         # TODO(Yingxin): remove after implemented
         self.pci_stats = pci_stats.PciDeviceStats()
-        self.numa_topology = None
 
     def __getattr__(self, name):
         return getattr(self.state, name)
 
-    def __setattr__(self, name, value):
-        setattr(self.state, name, value)
-
     def consume_from_request(self, spec_obj):
-        claim = claims.Claim(spec_obj, self, self.limits)
-        claim = claim.to_dict()
+        claim = self.state.claim(spec_obj)
 
-        self.free_ram_mb += claim['free_ram_mb']
-        self.disk_mb_used += claim['disk_mb_used']
-        self.vcpus_used += claim['vcpus_used']
-        self.num_instances += claim['num_instances']
+        self.state.process_claim(claim, True)
         spec_obj.numa_topology = claim['numa_topology']
-        self.numa_topology = hardware.get_host_numa_usage_from_instance(
-                self, spec_obj)
-        if claim['pci_requests']:
-            self.pci_stats.apply_requests(claim['pci_requests'],
-                                          claim['numa_topology'].cells)
-        self.num_io_ops += claim['num_io_ops']
 
         return claim
 
@@ -551,10 +537,11 @@ class HostManager(object):
         states = self.clients.get_all_host_states()
         ret = []
         for state in states:
-            ret.append(
-                    SharedHostState(state,
-                                    self._get_aggregates_info(state.host),
-                                    self._get_instance_info(state.nodename)))
+            ret.append(SharedHostState(state,
+                                       self._get_aggregates_info(state.host),
+                                       self._get_instance_info(
+                                           context,
+                                           state.hypervisor_hostname)))
         return ret
 
     def _get_aggregates_info(self, host):
@@ -571,7 +558,7 @@ class HostManager(object):
         In those cases, we need to grab the current InstanceList instead of
         relying on the version in _instance_info.
         """
-        host_name = compute.host
+        host_name = compute
         host_info = self._instance_info.get(host_name)
         if host_info and host_info.get("updated"):
             inst_dict = host_info["instances"]
