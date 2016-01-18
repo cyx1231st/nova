@@ -102,13 +102,16 @@ class SchedulerClients(object):
     def get_all_host_states(self):
         return self.ready_states.values()
 
-    def abort_claims(self, host, claim):
-        client_obj = self.clients.get(host, None)
-        if not client_obj:
-            LOG.error(_LE("Missing compute %(host)s to abort claim %(claim)s!")
-                      % {'host': host, 'claim': claim})
-            return
-        client_obj.abort_claims([claim])
+    def abort_claims(self, claims):
+        for claim in claims:
+            host = claim['host']
+            client_obj = self.clients.get(host, None)
+            if not client_obj:
+                LOG.error(_LE("Missing compute %(host)s to abort "
+                              "claim %(claim)s!")
+                          % {'host': host, 'claim': claim})
+                continue
+            client_obj.abort_claims([claim])
 
     def track_claim(self, claim):
         client_obj = self.clients.get(claim['host'], None)
