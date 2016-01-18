@@ -56,9 +56,9 @@ class SchedulerServers(object):
         self.host = host
         self.api = APIProxy(host)
 
-    def claim(self, claim):
+    def claim(self, claim, limits):
         try:
-            self.host_state.claim(claim)
+            self.host_state.claim(claim, limits)
         except exception.ComputeResourcesUnavailable as e:
             # todo() abort
             server_obj = self.servers.get(claim['host'], None)
@@ -66,7 +66,7 @@ class SchedulerServers(object):
                 server_obj.send_claim(claim, False)
             raise e
         self.host_state.process_claim(claim, True)
-        for server in self.servers:
+        for server in self.servers.values():
             server.send_claim(claim, True)
 
     def update_from_compute(self, context, compute):

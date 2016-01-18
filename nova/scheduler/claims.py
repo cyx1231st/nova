@@ -235,8 +235,8 @@ class Claim(claims.Claim):
             ret['pci_requests'] = self.pci_requests
             ret['numa_topology'] = self.numa_topology
 
-            ret['instance_id'] = self.spec_obj.instance_uuid
-            ret['node'] = self.host_state.nodename
+            ret['instance_uuid'] = self.spec_obj.instance_uuid
+            # ret['node'] = self.host_state.nodename
             ret['host'] = self.host_state.host
 
             return ret
