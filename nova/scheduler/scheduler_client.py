@@ -163,8 +163,9 @@ class SchedulerClient(object):
             else:
                 # normal situation
                 timeout_claims = self.old_claims.values()
-                LOG.error(_LE("Time out claims %s") % timeout_claims)
-                self.abort_claims(timeout_claims)
+                if timeout_claims:
+                    LOG.error(_LE("Time out claims %s") % timeout_claims)
+                    self.abort_claims(timeout_claims)
                 self.old_claims = self.claims
                 self.claims = {}
                 pass
@@ -220,7 +221,7 @@ class SchedulerClient(object):
             success = True
             for item in commit:
                 if 'version_expected' in item:
-                    success = self.host_state.process_commit(commit)
+                    success = self.host_state.process_commit(item)
                 elif 'instance_uuid' in item:
                     instance_uuid = item['instance_uuid']
                     process = item.pop('process', True)

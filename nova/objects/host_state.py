@@ -16,6 +16,8 @@ import random
 from nova import objects
 from nova.objects import base
 from nova.objects import fields
+from nova.scheduler import claims
+from nova.virt import hardware
 # from nova.pci import stats as pci_stats
 
 
@@ -195,8 +197,8 @@ class HostState(base.NovaObject):
 
         return result
 
-    def claim(self, req):
-        claim = claims.Claim(spec_obj, self.state, self.limits)
+    def claim(self, req, limits):
+        claim = claims.Claim(req, self, limits)
         return claim.to_dict()
 
     def process_claim(self, claim, apply_claim):

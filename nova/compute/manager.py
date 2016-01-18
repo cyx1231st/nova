@@ -2004,7 +2004,7 @@ class ComputeManager(manager.Manager):
         self._notify_about_instance_usage(context, instance, 'create.start',
                 extra_usage_info={'image_name': image_name})
         try:
-            self.scheduler_servers.claim(claim)
+            self.scheduler_servers.claim(claim, limits)
             rt = self._get_resource_tracker(node)
             with rt.instance_claim(context, instance, limits):
                 # NOTE(russellb) It's important that this validation be done

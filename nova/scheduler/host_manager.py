@@ -91,7 +91,7 @@ class SharedHostState(object):
         return getattr(self.state, name)
 
     def consume_from_request(self, spec_obj):
-        claim = self.state.claim(spec_obj)
+        claim = self.state.claim(spec_obj, self.limits)
 
         self.state.process_claim(claim, True)
         spec_obj.numa_topology = claim['numa_topology']
