@@ -234,7 +234,7 @@ class SchedulerClient(object):
                     seed = item['seed']
                     instance_uuid = item['instance_uuid']
                     process = item.pop('process', True)
-                    if item['from'] != self.host:
+                    if item['from'] != self.manager.host:
                         LOG.info(_LI("Process claim from another scheduler "
                                      "%(scheduler)s: %(claim)s") %
                                  {'scheduler': item['from'], 'claim': item})
