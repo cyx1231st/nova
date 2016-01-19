@@ -161,12 +161,8 @@ class SchedulerServer(object):
 
     def send_claim(self, claim, proceed):
         if self.queue is not None:
-            seed = claim['seed']
-            if claim['from'] != self.host:
-                claim['seed'] = None
             claim['proceed'] = proceed
             self.queue.put(claim)
-            claim['seed'] = seed
 
     def sync(self, context, service):
         if not service:
