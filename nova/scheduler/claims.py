@@ -143,7 +143,7 @@ class Claim(claims.Claim):
         unit = "GB"
         total = resources.total_usable_disk_gb
         # used = resources.total_usable_disk_gb - resources.free_disk_mb / 1024
-        used = resources.disk_mb_used
+        used = resources.disk_mb_used / 1024
         requested = self.disk_gb
 
         return self._test(type_, unit, total, used, requested, limit)
