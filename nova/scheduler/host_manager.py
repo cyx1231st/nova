@@ -94,6 +94,9 @@ class SharedHostState(object):
         claim = self.state.claim(spec_obj, self.limits)
 
         self.state.process_claim(claim, True)
+        LOG.info(_LI("Successfully consume from claim %(claim)s, "
+                     "the state is changed to %(state)s!")
+                 % {'claim': claim, 'state': self.state})
         spec_obj.numa_topology = claim['numa_topology']
 
         return claim

@@ -73,11 +73,6 @@ class SchedulerClients(object):
                 LOG.info(_LE("Keep non-exist compute %s") % old_key)
 
         for client in self.clients.values():
-            if client.host_state:
-                LOG.info(_LI("Host state on compute %(compute)s: %(state)s")
-                         % {'compute': client.host,
-                            'state': client.host_state})
-
             client.sync(context, service_refs.get(client.host, None))
 
     def notify_scheduler(self, context, host_name):
@@ -230,6 +225,7 @@ class SchedulerClient(object):
             for item in commit:
                 if 'version_expected' in item:
                     success = self.host_state.process_commit(item)
+                    LOG.info(_LI("Updated state: %s") % self.host_state)
                 elif 'instance_uuid' in item:
                     seed = item['seed']
                     instance_uuid = item['instance_uuid']
@@ -239,6 +235,7 @@ class SchedulerClient(object):
                                      "%(scheduler)s: %(claim)s") %
                                  {'scheduler': item['from'], 'claim': item})
                         self.host_state.process_claim(item, process)
+                        LOG.info(_LI("Updated state: %s") % self.host_state)
                     else:
                         in_track = False
                         if seed in self.claims:
@@ -252,6 +249,8 @@ class SchedulerClient(object):
                             LOG.info(_LI("Decision failure for instance %s!")
                                      % instance_uuid)
                             self.host_state.process_claim(item, process)
+                            LOG.info(_LI("Updated state: %s")
+                                     % self.host_state)
                         elif in_track and process:
                             LOG.info(_LI("Decision success for instance %s!")
                                      % instance_uuid)
@@ -262,12 +261,12 @@ class SchedulerClient(object):
                             LOG.error(_LE("Outdated decision success for "
                                           "instance %s!") % instance_uuid)
                             self.host_state.process_claim(item, process)
+                            LOG.info(_LI("Updated state: %s")
+                                     % self.host_state)
                 else:
                     LOG.error(_LE("Unable to handle commit %s!") % item)
             if not success:
                 LOG.info(_LI("Warn: HostState doesn't match."))
-            else:
-                LOG.info(_LI("Updated state: %s") % self.host_state)
         else:
             LOG.info(_LE("The commit comes without hoststate"))
             self.refresh_state(context, True)
