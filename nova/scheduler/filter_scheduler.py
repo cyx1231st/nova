@@ -167,7 +167,6 @@ class FilterScheduler(driver.Scheduler):
             # will change for the next instance.
             try:
                 claim = chosen_host.obj.consume_from_request(spec_obj)
-                claim['from'] = self.clients.host
                 self.clients.track_claim(claim)
             except exception.ComputeResourcesUnavailable as e:
                 LOG.debug("Remove host: %(host)s because of consumption"

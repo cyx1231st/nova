@@ -234,7 +234,10 @@ class SchedulerClient(object):
                     seed = item['seed']
                     instance_uuid = item['instance_uuid']
                     process = item.pop('process', True)
-                    if instance_uuid is None:
+                    if seed is None:
+                        LOG.info(_LI("Process claim from scheduler "
+                                     "%(scheduler)s: %(claim)s") %
+                                 {'scheduler': item['from'], 'claim': item})
                         self.host_state.process_claim(item, process)
                     else:
                         in_track = False
