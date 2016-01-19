@@ -14,6 +14,7 @@
 #    under the License.
 
 import bisect
+import random
 
 from oslo_log import log as logging
 
@@ -45,6 +46,7 @@ class SchedulerClients(object):
         self.api = APIProxy(host)
         self.clients = {}
         self.ready_states = {}
+        self.seed = random.randint(0, 1000000)
 
     def periodically_refresh_clients(self, context):
         service_refs = {service.host: service
@@ -114,6 +116,8 @@ class SchedulerClients(object):
             client_obj.abort_claims([claim])
 
     def track_claim(self, claim):
+        claim['seed'] = self.seed
+        self.seed += 1
         client_obj = self.clients.get(claim['host'], None)
         if not client_obj:
             LOG.error(_LE("Missing compute %(host)s to track claim %(claim)s!")
@@ -226,17 +230,18 @@ class SchedulerClient(object):
                 if 'version_expected' in item:
                     success = self.host_state.process_commit(item)
                 elif 'instance_uuid' in item:
+                    seed = item['seed']
                     instance_uuid = item['instance_uuid']
                     process = item.pop('process', True)
                     if instance_uuid is None:
                         self.host_state.process_claim(item, process)
                     else:
                         in_track = False
-                        if instance_uuid in self.claims:
-                            del self.claims[instance_uuid]
+                        if seed in self.claims:
+                            del self.claims[seed]
                             in_track = True
-                        if instance_uuid in self.old_claims:
-                            del self.old_claims[instance_uuid]
+                        if seed in self.old_claims:
+                            del self.old_claims[seed]
                             in_track = True
 
                         if in_track and not process:
@@ -266,11 +271,11 @@ class SchedulerClient(object):
     def abort_claims(self, claims):
         for claim in claims:
             do_abort = False
-            if claim['instance_uuid'] in self.claims:
-                del self.claims[claim['instance_uuid']]
+            if claim['seed'] in self.claims:
+                del self.claims[claim['seed']]
                 do_abort = True
-            if claim['instance_uuid'] in self.old_claims:
-                del self.old_claims[claim['instance_uuid']]
+            if claim['seed'] in self.old_claims:
+                del self.old_claims[claim['seed']]
                 do_abort = True
 
             if do_abort:
@@ -280,7 +285,7 @@ class SchedulerClient(object):
                 LOG.error(_LE("Claim %s not found, abort abort!") % claim)
 
     def track_claim(self, claim):
-        self.claims[claim['instance_uuid']] = claim
+        self.claims[claim['seed']] = claim
 
     def disable(self):
         self.host_state = None

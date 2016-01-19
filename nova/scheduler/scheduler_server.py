@@ -64,7 +64,11 @@ class SchedulerServers(object):
             server_obj = self.servers.get(claim['host'], None)
             if server_obj:
                 server_obj.send_claim(claim, False)
+            else:
+                LOG.error(_LE("Cannot abort claim because scheduer %s is "
+                              "unavailable!") % claim['host'])
             raise e
+
         self.host_state.process_claim(claim, True)
         for server in self.servers.values():
             server.send_claim(claim, True)
