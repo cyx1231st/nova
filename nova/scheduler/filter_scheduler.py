@@ -134,7 +134,6 @@ class FilterScheduler(driver.Scheduler):
             LOG.debug("Weighed %(hosts)s", {'hosts': weighed_hosts})
 
             chosen_host, claim = self._select_host(spec_obj, weighed_hosts)
-            claim['from'] = self.clients.host
             if not chosen_host:
                 # Can't get any host locally, use the same logic with the empty
                 # get_filtered_hosts(...).
@@ -168,6 +167,7 @@ class FilterScheduler(driver.Scheduler):
             # will change for the next instance.
             try:
                 claim = chosen_host.obj.consume_from_request(spec_obj)
+                claim['from'] = self.clients.host
                 self.clients.track_claim(claim)
             except exception.ComputeResourcesUnavailable as e:
                 LOG.debug("Remove host: %(host)s because of consumption"
