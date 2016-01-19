@@ -117,6 +117,7 @@ class SchedulerClients(object):
 
     def track_claim(self, claim):
         claim['seed'] = self.seed
+        claim['from'] = self.host
         self.seed += 1
         client_obj = self.clients.get(claim['host'], None)
         if not client_obj:
@@ -285,6 +286,7 @@ class SchedulerClient(object):
                 LOG.error(_LE("Claim %s not found, abort abort!") % claim)
 
     def track_claim(self, claim):
+        LOG.info(_LI("Tracking claim seed %s") % claim['seed'])
         self.claims[claim['seed']] = claim
 
     def disable(self):
