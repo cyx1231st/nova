@@ -40,7 +40,7 @@ class APIProxy(object):
     def notify_schedulers(self, context):
         return self.scheduler_api.notify_schedulers(context, self.host)
 
-    def notify_schduler(self, context, scheduler):
+    def notify_scheduler(self, context, scheduler):
         return self.scheduler_api.notify_scheduler(
                 context, self.host, scheduler)
 
