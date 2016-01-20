@@ -60,12 +60,12 @@ class SchedulerServers(object):
         try:
             self.host_state.claim(claim, limits)
         except exception.ComputeResourcesUnavailable as e:
-            server_obj = self.servers.get(claim['host'], None)
+            server_obj = self.servers.get(claim['from'], None)
             if server_obj:
                 server_obj.send_claim(claim, False)
             else:
                 LOG.error(_LE("Cannot abort claim because scheduer %s is "
-                              "unavailable!") % claim['host'])
+                              "unavailable!") % claim['from'])
             raise e
 
         self.host_state.process_claim(claim, True)
