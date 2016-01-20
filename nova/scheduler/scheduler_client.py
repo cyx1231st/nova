@@ -21,6 +21,7 @@ from oslo_log import log as logging
 from nova.compute import rpcapi as compute_rpcapi
 from nova.i18n import _LI, _LE
 from nova import objects
+from nova.pci import stats as pci_stats
 from nova import servicegroup
 
 LOG = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ class SchedulerClients(object):
         old_keys = service_keys_cache - service_keys_db
 
         for new_key in new_keys:
-            client_obj = SchedulerClient(service_refs[new_key].host,
+            client_obj = SharedHostState(service_refs[new_key].host,
                                          self.api, self)
             self.clients[new_key] = client_obj
             LOG.info(_LI("Added new compute %s from db.") % new_key)
@@ -79,7 +80,7 @@ class SchedulerClients(object):
         LOG.info(_LI("Get notified from host %s") % host_name)
         client_obj = self.clients.get(host_name, None)
         if not client_obj:
-            client_obj = SchedulerClient(host_name, self.api, self)
+            client_obj = SharedHostState(host_name, self.api, self)
             self.clients[host_name] = client_obj
             LOG.info(_LI("Added new compute %s from notification.")
                         % host_name)
@@ -90,7 +91,7 @@ class SchedulerClients(object):
                  % {"commit": commit, "compute": compute, "seed": seed})
         client_obj = self.clients.get(compute, None)
         if not client_obj:
-            client_obj = SchedulerClient(compute, self.api, self)
+            client_obj = SharedHostState(compute, self.api, self)
             self.clients[compute] = client_obj
             LOG.error(_LE("Added new compute %s from commit.")
                         % compute)
@@ -110,19 +111,8 @@ class SchedulerClients(object):
                 continue
             client_obj.abort_claims([claim])
 
-    def track_claim(self, claim):
-        claim['seed'] = self.seed
-        claim['from'] = self.host
-        self.seed += 1
-        client_obj = self.clients.get(claim['host'], None)
-        if not client_obj:
-            LOG.error(_LE("Missing compute %(host)s to track claim %(claim)s!")
-                      % {'host': claim['host'], 'claim': claim})
-            return
-        client_obj.track_claim(claim)
 
-
-class SchedulerClient(object):
+class SharedHostState(object):
     def __init__(self, host, api, manager):
         self.host = host
         self.api = api
@@ -130,12 +120,61 @@ class SchedulerClient(object):
         # the min window is 1
         self.window_max = 7
 
-        self.host_state = None
         self.tmp = False
         self.seed = None
         self.window = None
         self.claims = None
         self.old_claims = None
+
+        # shared host state
+        self.host_state = None
+        self.aggregates = []
+        self.instances = {}
+        self.limits = {}
+        self.nodename = host
+        
+        # TODO(Yingxin): remove after implemented
+        self.pci_stats = pci_stats.PciDeviceStats()
+
+    def __getattr__(self, name):
+        return getattr(self.host_state, name)
+
+    def consume_from_request(self, spec_obj):
+        claim = self.host_state.claim(spec_obj, self.limits)
+        claim['seed'] = self.manager.seed
+        claim['from'] = self.manager.host
+        self.manager.seed += 1
+
+        self.host_state.process_claim(claim, True)
+        LOG.info(_LI("Successfully consume from claim %(claim)s, "
+                     "the state is changed to %(state)s!")
+                 % {'claim': claim, 'state': self})
+        spec_obj.numa_topology = claim['numa_topology']
+
+        # track claim
+        self.claims[claim['seed']] = claim
+
+        return claim
+
+    def update_from_host_manager(self, aggregates, inst_dict):
+        self.aggregates = aggregates or []
+        self.instances = inst_dict or {}
+
+    def __repr__(self):
+        if self.host_state is None:
+            return ("HostState(%s, %s) disabled!" % self.host, self.nodename)
+        return ("HostState(%s, %s) total_usable_ram_mb:%s free_ram_mb:%s "
+                "total_usable_disk_gb:%s free_disk_mb:%s disk_mb_used:%s "
+                "vcpus_total:%s vcpus_used:%s "
+                "numa_topology:%s pci_stats:%s "
+                "num_io_ops:%s num_instances:%s" %
+                (self.host, self.nodename,
+                 self.total_usable_ram_mb, self.free_ram_mb,
+                 self.total_usable_disk_gb, self.free_disk_mb,
+                 self.disk_mb_used,
+                 self.vcpus_total, self.vcpus_used,
+                 self.numa_topology, self.pci_stats,
+                 self.num_io_ops, self.num_instances))
 
     def _handle_tmp(self):
         if self.host_state:
@@ -184,7 +223,7 @@ class SchedulerClient(object):
             LOG.info(_LI("Compute %s is refreshed!") % self.host)
             self.host_state = commit
             self.seed = seed
-            self.manager.ready_states[self.host] = self.host_state
+            self.manager.ready_states[self.host] = self
             self.window = []
             self.claims = {}
             self.old_claims = {}
@@ -225,7 +264,7 @@ class SchedulerClient(object):
             for item in commit:
                 if 'version_expected' in item:
                     success = self.host_state.process_commit(item)
-                    LOG.info(_LI("Updated state: %s") % self.host_state)
+                    LOG.info(_LI("Updated state: %s") % self)
                 elif 'instance_uuid' in item:
                     seed = item['seed']
                     instance_uuid = item['instance_uuid']
@@ -235,7 +274,7 @@ class SchedulerClient(object):
                                      "%(scheduler)s: %(claim)s") %
                                  {'scheduler': item['from'], 'claim': item})
                         self.host_state.process_claim(item, process)
-                        LOG.info(_LI("Updated state: %s") % self.host_state)
+                        LOG.info(_LI("Updated state: %s") % self)
                     else:
                         in_track = False
                         if seed in self.claims:
@@ -250,7 +289,7 @@ class SchedulerClient(object):
                                      % instance_uuid)
                             self.host_state.process_claim(item, process)
                             LOG.info(_LI("Updated state: %s")
-                                     % self.host_state)
+                                     % self)
                         elif in_track and process:
                             LOG.info(_LI("Decision success for instance %s!")
                                      % instance_uuid)
@@ -262,7 +301,7 @@ class SchedulerClient(object):
                                           "instance %s!") % instance_uuid)
                             self.host_state.process_claim(item, process)
                             LOG.info(_LI("Updated state: %s")
-                                     % self.host_state)
+                                     % self)
                 else:
                     LOG.error(_LE("Unable to handle commit %s!") % item)
             if not success:

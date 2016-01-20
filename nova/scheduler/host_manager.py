@@ -33,7 +33,7 @@ import six
 import nova.conf
 from nova import context as context_module
 from nova import exception
-from nova.i18n import _LI, _LW, _LE
+from nova.i18n import _LI, _LW
 from nova import objects
 from nova.pci import stats as pci_stats
 from nova.scheduler import claims
@@ -73,38 +73,6 @@ class ReadOnlyDict(IterableUserDict):
 
     def update(self):
         raise TypeError()
-
-
-class SharedHostState(object):
-    def __init__(self, state, aggregates, inst_dict):
-        self.state = state
-        self.aggregates = aggregates or []
-        self.instances = inst_dict or {}
-        self.limits = {}
-        self.host = state.host
-        self.nodename = state.hypervisor_hostname
-
-        # TODO(Yingxin): remove after implemented
-        self.pci_stats = pci_stats.PciDeviceStats()
-
-    def __getattr__(self, name):
-        return getattr(self.state, name)
-
-    def consume_from_request(self, spec_obj):
-        claim = self.state.claim(spec_obj, self.limits)
-
-        self.state.process_claim(claim, True)
-        LOG.info(_LI("Successfully consume from claim %(claim)s, "
-                     "the state is changed to %(state)s!")
-                 % {'claim': claim, 'state': self.state})
-        spec_obj.numa_topology = claim['numa_topology']
-
-        return claim
-
-    def __repr__(self):
-        return ("(%s, %s) ram:%s disk:%s io_ops:%s instances:%s" %
-                (self.host, self.nodename, self.free_ram_mb, self.free_disk_mb,
-                 self.num_io_ops, self.num_instances))
 
 
 class HostState(object):
@@ -538,14 +506,13 @@ class HostManager(object):
         """
 
         states = self.clients.get_all_host_states()
-        ret = []
         for state in states:
-            ret.append(SharedHostState(state,
+            state.update_from_host_manager(
                                        self._get_aggregates_info(state.host),
                                        self._get_instance_info(
                                            context,
-                                           state.hypervisor_hostname)))
-        return ret
+                                           state.hypervisor_hostname))
+        return states
 
     def _get_aggregates_info(self, host):
         return [self.aggs_by_id[agg_id] for agg_id in

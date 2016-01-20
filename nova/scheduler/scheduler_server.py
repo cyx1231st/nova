@@ -60,7 +60,6 @@ class SchedulerServers(object):
         try:
             self.host_state.claim(claim, limits)
         except exception.ComputeResourcesUnavailable as e:
-            # todo() abort
             server_obj = self.servers.get(claim['host'], None)
             if server_obj:
                 server_obj.send_claim(claim, False)
