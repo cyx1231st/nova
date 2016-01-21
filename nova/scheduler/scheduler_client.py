@@ -323,6 +323,7 @@ class SharedHostState(object):
             if do_abort:
                 LOG.info(_LI("Abort claim %s!") % claim)
                 self.host_state.process_claim(claim, False)
+                LOG.info(_LI("Updated state: %s") % self)
             else:
                 LOG.error(_LE("Claim %s not found, abort abort!") % claim)
 
