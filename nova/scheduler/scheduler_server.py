@@ -60,27 +60,40 @@ class SchedulerServers(object):
         try:
             self.host_state.claim(claim, limits)
         except exception.ComputeResourcesUnavailable as e:
+            self.fail_claim(claim)
+            raise e
+
+        # self.host_state.process_claim(claim, True)
+        # for server in self.servers.values():
+        #     server.send_claim(claim, True)
+    def fail_claim(self, claim):
             server_obj = self.servers.get(claim['from'], None)
             if server_obj:
                 server_obj.send_claim(claim, False)
             else:
                 LOG.error(_LE("Cannot abort claim because scheduer %s is "
                               "unavailable!") % claim['from'])
-            raise e
 
-        self.host_state.process_claim(claim, True)
-        for server in self.servers.values():
-            server.send_claim(claim, True)
-
-    def update_from_compute(self, context, compute):
+    def update_from_compute(self, context, compute, claim, proceed):
         if not self.host_state:
             self.host_state = objects.HostState.from_primitives(
                     context, compute)
             self.api.notify_schedulers(context)
             LOG.info(_LI("Compute %s is up!") % self.host)
         else:
+            if claim:
+                if proceed:
+                    self.host_state.process_claim(claim, True)
+                    for server in self.servers.values():
+                        server.send_claim(claim, True)
+                else:
+                    self.fail_claim(claim)
+
             commit = self.host_state.update_from_compute(context, compute)
             if commit:
+                if claim:
+                    LOG.warn(_LW("INCONSISTENT STATE FROM COMMIT: %s!"),
+                        commit)
                 for server in self.servers.values():
                     if server.queue is not None:
                         server.queue.put(commit)

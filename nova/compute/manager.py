@@ -2006,7 +2006,7 @@ class ComputeManager(manager.Manager):
         try:
             self.scheduler_servers.claim(claim, limits)
             rt = self._get_resource_tracker(node)
-            with rt.instance_claim(context, instance, limits):
+            with rt.instance_claim(context, instance, limits, claim):
                 # NOTE(russellb) It's important that this validation be done
                 # *after* the resource tracker instance claim, as that is where
                 # the host is set on the instance.

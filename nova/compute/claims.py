@@ -76,12 +76,13 @@ class Claim(NopClaim):
     """
 
     def __init__(self, context, instance, tracker, resources, overhead=None,
-                 limits=None):
+                 limits=None, scheduler_claim=None):
         super(Claim, self).__init__()
         # Stash a copy of the instance at the current point of time
         self.instance = instance.obj_clone()
         self._numa_topology_loaded = False
         self.tracker = tracker
+        self.scheduler_claim = scheduler_claim
 
         if not overhead:
             overhead = {'memory_mb': 0}
@@ -118,7 +119,8 @@ class Claim(NopClaim):
         been aborted.
         """
         LOG.debug("Aborting claim: %s" % self, instance=self.instance)
-        self.tracker.abort_instance_claim(self.context, self.instance)
+        self.tracker.abort_instance_claim(self.context, self.instance,
+                self.scheduler_claim)
 
     def _claim_test(self, resources, limits=None):
         """Test if this claim can be satisfied given available resources and
