@@ -670,7 +670,7 @@ class ResourceTracker(object):
             self.pci_tracker.save(context)
         self.scheduler_servers.update_from_compute(
                 context, self.compute_node,
-                scheduler_claim=scheduler_claim, proceed=proceed)
+                claim=scheduler_claim, proceed=proceed)
 
     def _update_usage(self, usage, sign=1):
         mem_usage = usage['memory_mb']
