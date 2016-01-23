@@ -268,12 +268,12 @@ class SharedHostState(object):
                 elif 'instance_uuid' in item:
                     seed = item['seed']
                     instance_uuid = item['instance_uuid']
-                    process = item.pop('process', True)
+                    proceed = item.pop('proceed', True)
                     if item['from'] != self.manager.host:
-                        LOG.info(_LI("Process claim from another scheduler "
+                        LOG.info(_LI("Proceed claim from another scheduler "
                                      "%(scheduler)s: %(claim)s") %
                                  {'scheduler': item['from'], 'claim': item})
-                        self.host_state.process_claim(item, process)
+                        self.host_state.process_claim(item, proceed)
                         LOG.info(_LI("Updated state: %s") % self)
                     else:
                         in_track = False
@@ -284,22 +284,22 @@ class SharedHostState(object):
                             del self.old_claims[seed]
                             in_track = True
 
-                        if in_track and not process:
+                        if in_track and not proceed:
                             LOG.info(_LI("Decision failure for instance %s!")
                                      % instance_uuid)
-                            self.host_state.process_claim(item, process)
+                            self.host_state.process_claim(item, proceed)
                             LOG.info(_LI("Updated state: %s")
                                      % self)
-                        elif in_track and process:
+                        elif in_track and proceed:
                             LOG.info(_LI("Decision success for instance %s!")
                                      % instance_uuid)
-                        elif not in_track and not process:
+                        elif not in_track and not proceed:
                             LOG.error(_LE("Outdated decision failure for "
                                           "instance %s!") % instance_uuid)
                         else:
                             LOG.error(_LE("Outdated decision success for "
                                           "instance %s!") % instance_uuid)
-                            self.host_state.process_claim(item, process)
+                            self.host_state.process_claim(item, proceed)
                             LOG.info(_LI("Updated state: %s")
                                      % self)
                 else:
