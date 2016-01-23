@@ -53,20 +53,25 @@ class SchedulerServers(object):
     def __init__(self, host):
         self.servers = {}
         self.host_state = None
+        self.compute_state = None
         self.host = host
         self.api = APIProxy(host)
+
+        self.claims = {}
+        self.old_claims = {}
 
     def claim(self, claim, limits):
         try:
             self.host_state.claim(claim, limits)
         except exception.ComputeResourcesUnavailable as e:
-            self.fail_claim(claim)
+            self._fail_claim(claim)
             raise e
 
-        # self.host_state.process_claim(claim, True)
-        # for server in self.servers.values():
-        #     server.send_claim(claim, True)
-    def fail_claim(self, claim):
+        self._success_claim(claim)
+
+    def _fail_claim(self, claim):
+            LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
+                     % {'scheduler': claim['from'], 'claim': claim})
             server_obj = self.servers.get(claim['from'], None)
             if server_obj:
                 server_obj.send_claim(claim, False)
@@ -74,29 +79,47 @@ class SchedulerServers(object):
                 LOG.error(_LE("Cannot abort claim because scheduer %s is "
                               "unavailable!") % claim['from'])
 
+    def _success_claim(self, claim):
+        LOG.info(_LI("Success scheduler %(scheduler)s claim: %(claim)s!")
+                 % {'scheduler': claim['from'], 'claim': claim})
+        self.host_state.process_claim(claim, True)
+        self.claims[claim['seed']] = claim
+        for server in self.servers.values():
+            server.send_claim(claim, True)
+
     def update_from_compute(self, context, compute, claim, proceed):
         if not self.host_state:
             self.host_state = objects.HostState.from_primitives(
                     context, compute)
+            self.compute_state = self.host_state.obj_clone()
             self.api.notify_schedulers(context)
             LOG.info(_LI("Compute %s is up!") % self.host)
         else:
             if claim:
-                if proceed:
-                    self.host_state.process_claim(claim, True)
-                    for server in self.servers.values():
-                        server.send_claim(claim, True)
+                do_proceed = False
+                if claim['seed'] in self.claims:
+                    del self.claims[claim['seed']]
+                    do_proceed = True
+                if claim['seed'] in self.old_claims:
+                    del self.claims[claim['seed']]
+                    do_proceed = True
+                if do_proceed:
+                    if proceed:
+                        self.compute_state.process_claim(claim, True)
+                        LOG.info(_LI("Compute claim success: %s") % claim)
+                    else:
+                        LOG.info(_LI("Compute claim failed: %s") % claim)
                 else:
-                    self.fail_claim(claim)
+                    LOG.error(_LE("Unrecognized compute claim: %s") % claim)
 
-            commit = self.host_state.update_from_compute(context, compute)
+            commit = self.compute_state.update_from_compute(context, compute)
             if commit:
                 if claim:
-                    LOG.warn(_LW("INCONSISTENT STATE FROM COMMIT: %s!"),
-                        commit)
+                    LOG.warn(_LW("EXTRA COMMIT!"))
+                LOG.info(_LI("Host state change: %s") % claim)
                 for server in self.servers.values():
                     if server.queue is not None:
-                        server.queue.put(commit)
+                        server.queue.put_nowait(commit)
 
     def report_host_state(self, compute, scheduler):
         if compute != self.host:
@@ -146,6 +169,15 @@ class SchedulerServers(object):
         for server in self.servers.values():
             server.sync(context, service_refs.get(server.host, None))
 
+        if self.host_state:
+            timeout_claims = self.old_claims.values()
+            if timeout_claims:
+                LOG.error(_LE("Abort timeout claims %s") % timeout_claims)
+                for claim in timeout_claims:
+                    self.host_state.process_claim(claim, False)
+            self.old_claims = self.claims
+            self.claims = {}
+
 
 class SchedulerServer(object):
     def __init__(self, host, api, manager):
@@ -174,7 +206,7 @@ class SchedulerServer(object):
     def send_claim(self, claim, proceed):
         if self.queue is not None:
             claim['proceed'] = proceed
-            self.queue.put(claim)
+            self.queue.put_nowait(claim)
 
     def sync(self, context, service):
         if not service:
@@ -198,7 +230,7 @@ class SchedulerServer(object):
 
         self.tmp = True
         self.queue = queue.Queue()
-        self.queue.put("refresh")
+        self.queue.put_nowait("refresh")
         self.thread = utils.spawn(
             self._dispatch_commits, nova.context.get_admin_context())
 
