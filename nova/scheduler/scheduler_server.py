@@ -116,7 +116,8 @@ class SchedulerServers(object):
             if commit:
                 if claim:
                     LOG.warn(_LW("EXTRA COMMIT!"))
-                LOG.info(_LI("Host state change: %s") % claim)
+                LOG.info(_LI("Host state change: %s") % commit)
+                self.host_state.process_commit(commit)
                 for server in self.servers.values():
                     if server.queue is not None:
                         server.queue.put_nowait(commit)
