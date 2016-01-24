@@ -513,7 +513,9 @@ class HostManager(object):
                         for service in objects.ServiceList.get_by_binary(
                             context, 'nova-compute')}
         # Get resource usage across the available compute nodes:
+        LOG.info(_LI("read db start"))
         compute_nodes = objects.ComputeNodeList.get_all(context)
+        LOG.info(_LI("read db end"))
         seen_nodes = set()
         for compute in compute_nodes:
             service = service_refs.get(compute.host)
@@ -648,7 +650,7 @@ class HostManager(object):
                              "Re-created its InstanceList."), host_name)
                 return
             host_info["updated"] = True
-            LOG.info(_LI("Successfully synced instances from host '%s'."),
+            LOG.debug("Successfully synced instances from host '%s'." %
                      host_name)
         else:
             self._recreate_instance_info(context, host_name)

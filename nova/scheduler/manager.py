@@ -27,12 +27,12 @@ from oslo_utils import importutils
 import nova.conf
 from nova import exception
 from nova import manager
-from nova import quota
+# from nova import quota
 
 
 CONF = nova.conf.CONF
 
-QUOTAS = quota.QUOTAS
+# QUOTAS = quota.QUOTAS
 
 
 class SchedulerManager(manager.Manager):
@@ -47,9 +47,9 @@ class SchedulerManager(manager.Manager):
         super(SchedulerManager, self).__init__(service_name='scheduler',
                                                *args, **kwargs)
 
-    @periodic_task.periodic_task
-    def _expire_reservations(self, context):
-        QUOTAS.expire(context)
+    # @periodic_task.periodic_task
+    # def _expire_reservations(self, context):
+    #     QUOTAS.expire(context)
 
     @periodic_task.periodic_task(spacing=CONF.scheduler_driver_task_period,
                                  run_immediately=True)

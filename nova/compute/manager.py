@@ -1861,6 +1861,8 @@ class ComputeManager(manager.Manager):
             with self._build_semaphore:
                 self._do_build_and_run_instance(*args, **kwargs)
 
+        LOG.info(_LI("request %s") % instance.uuid)
+
         # NOTE(danms): We spawn here to return the RPC worker thread back to
         # the pool. Since what follows could take a really long time, we don't
         # want to tie up RPC workers.
@@ -2004,6 +2006,7 @@ class ComputeManager(manager.Manager):
                 # NOTE(russellb) It's important that this validation be done
                 # *after* the resource tracker instance claim, as that is where
                 # the host is set on the instance.
+                LOG.info(_LI("succeed %s") % instance.uuid)
                 self._validate_instance_group_policy(context, instance,
                         filter_properties)
                 with self._build_resources(context, instance,
@@ -2034,6 +2037,7 @@ class ComputeManager(manager.Manager):
                 self._notify_about_instance_usage(context, instance,
                     'create.end', fault=e)
         except exception.ComputeResourcesUnavailable as e:
+            LOG.info(_LI("failed_ instance %s") % instance.uuid)
             LOG.debug(e.format_message(), instance=instance)
             self._notify_about_instance_usage(context, instance,
                     'create.error', fault=e)

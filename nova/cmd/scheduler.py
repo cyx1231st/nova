@@ -17,18 +17,39 @@
 """Starter script for Nova Scheduler."""
 
 import sys
+import traceback
 
 from oslo_log import log as logging
 from oslo_reports import guru_meditation_report as gmr
 
+from nova.conductor import rpcapi as conductor_rpcapi
 import nova.conf
 from nova import config
+import nova.db.api
+from nova import exception
+from nova.i18n import _LE
 from nova import objects
+from nova.objects import base as objects_base
 from nova import service
 from nova import utils
 from nova import version
 
 CONF = nova.conf.CONF
+LOG = logging.getLogger('nova.scheduler')
+
+
+def block_db_access():
+    class NoDB(object):
+        def __getattr__(self, attr):
+            return self
+
+        def __call__(self, *args, **kwargs):
+            stacktrace = "".join(traceback.format_stack())
+            LOG.error(_LE('No db access allowed in nova-scheduler: %s'),
+                      stacktrace)
+            raise exception.DBNotAllowed('nova-scheduler')
+
+    nova.db.api.IMPL = NoDB()
 
 
 def main():
@@ -39,7 +60,12 @@ def main():
 
     gmr.TextGuruMeditation.setup_autorun(version)
 
+    block_db_access()
+    objects_base.NovaObject.indirection_api = \
+        conductor_rpcapi.ConductorAPI()
+
     server = service.Service.create(binary='nova-scheduler',
-                                    topic=CONF.scheduler_topic)
+                                    topic=CONF.scheduler_topic,
+                                    db_allowed=False)
     service.serve(server)
     service.wait()

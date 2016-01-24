@@ -26,7 +26,7 @@ from six.moves import range
 
 import nova.conf
 from nova import exception
-from nova.i18n import _
+from nova.i18n import _, _LI
 from nova import objects
 from nova import rpc
 from nova.scheduler import driver
@@ -52,6 +52,7 @@ class FilterScheduler(driver.Scheduler):
         spec_obj = objects.RequestSpec.from_primitives(context,
                                                        request_spec,
                                                        filter_properties)
+        LOG.info(_LI("request %s") % spec_obj.instance_uuid)
         self.notifier.info(
             context, 'scheduler.select_destinations.start',
             dict(request_spec=spec_obj.to_legacy_request_spec_dict()))
@@ -120,6 +121,7 @@ class FilterScheduler(driver.Scheduler):
                     spec_obj, index=num)
             if not hosts:
                 # Can't get any more locally.
+                LOG.info(_LI("reject_ %s from cache") % spec_obj.instance_uuid)
                 break
 
             LOG.debug("Filtered %(hosts)s", {'hosts': hosts})
@@ -147,6 +149,9 @@ class FilterScheduler(driver.Scheduler):
                 spec_obj.instance_group.hosts.append(chosen_host.obj.host)
                 # hosts has to be not part of the updates when saving
                 spec_obj.instance_group.obj_reset_changes(['hosts'])
+            LOG.info(_LI("attempt %(instance)s to %(host)s") %
+                     {'instance': spec_obj.instance_uuid,
+                      'host': chosen_host.obj.host})
         return selected_hosts
 
     def _get_all_host_states(self, context):
