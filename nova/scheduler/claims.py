@@ -111,10 +111,10 @@ class Claim(claims.Claim):
         vcpus_limit = limits.get('vcpu')
         numa_topology_limit = limits.get('numa_topology')
 
-        LOG.debug("Attempting claim: memory %(memory_mb)d MB, "
-                     "disk %(disk_gb)d GB, vcpus %(vcpus)d CPU",
-                 {'memory_mb': self.memory_mb, 'disk_gb': self.disk_gb,
-                  'vcpus': self.vcpus})
+        # LOG.debug("Attempting claim: memory %(memory_mb)d MB, "
+        #              "disk %(disk_gb)d GB, vcpus %(vcpus)d CPU",
+        #          {'memory_mb': self.memory_mb, 'disk_gb': self.disk_gb,
+        #           'vcpus': self.vcpus})
 
         reasons = [self._test_memory(resources, memory_mb_limit),
                    self._test_disk(resources, disk_gb_limit),
@@ -127,7 +127,7 @@ class Claim(claims.Claim):
             raise exception.ComputeResourcesUnavailable(reason=
                     "; ".join(reasons))
 
-        LOG.debug('Claim successful')
+        # LOG.debug('Claim successful')
 
     def _test_memory(self, resources, limit):
         type_ = _("memory")
@@ -199,22 +199,22 @@ class Claim(claims.Claim):
         """Test if the given type of resource needed for a claim can be safely
         allocated.
         """
-        LOG.debug('Total %(type)s: %(total)d %(unit)s, used: %(used).02f '
-                    '%(unit)s',
-                  {'type': type_, 'total': total, 'unit': unit, 'used': used})
+        # LOG.debug('Total %(type)s: %(total)d %(unit)s, used: %(used).02f '
+        #             '%(unit)s',
+        #           {'type': type_, 'total': total, 'unit': unit, 'used': used})
 
         if limit is None:
             # treat resource as unlimited:
-            LOG.debug('%(type)s limit not specified, defaulting to '
-                        'unlimited', {'type': type_})
+            # LOG.debug('%(type)s limit not specified, defaulting to '
+            #             'unlimited', {'type': type_})
             return
 
         free = limit - used
 
         # Oversubscribed resource policy info:
-        LOG.debug('%(type)s limit: %(limit).02f %(unit)s, '
-                     'free: %(free).02f %(unit)s',
-                  {'type': type_, 'limit': limit, 'free': free, 'unit': unit})
+        # LOG.debug('%(type)s limit: %(limit).02f %(unit)s, '
+        #              'free: %(free).02f %(unit)s',
+        #           {'type': type_, 'limit': limit, 'free': free, 'unit': unit})
 
         if requested > free:
             return (_('Free %(type)s %(free).02f '

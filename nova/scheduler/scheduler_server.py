@@ -70,8 +70,8 @@ class SchedulerServers(object):
         self._success_claim(claim)
 
     def _fail_claim(self, claim):
-            LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
-                     % {'scheduler': claim['from'], 'claim': claim})
+            # LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
+            #          % {'scheduler': claim['from'], 'claim': claim})
             server_obj = self.servers.get(claim['from'], None)
             if server_obj:
                 server_obj.send_claim(claim, False)
@@ -80,8 +80,8 @@ class SchedulerServers(object):
                               "unavailable!") % claim['from'])
 
     def _success_claim(self, claim):
-        LOG.info(_LI("Success scheduler %(scheduler)s claim: %(claim)s!")
-                 % {'scheduler': claim['from'], 'claim': claim})
+        # LOG.info(_LI("Success scheduler %(scheduler)s claim: %(claim)s!")
+        #         % {'scheduler': claim['from'], 'claim': claim})
         self.host_state.process_claim(claim, True)
         self.claims[claim['seed']] = claim
         for server in self.servers.values():
@@ -106,9 +106,10 @@ class SchedulerServers(object):
                 if do_proceed:
                     if proceed:
                         self.compute_state.process_claim(claim, True)
-                        LOG.info(_LI("Compute claim success: %s") % claim)
+                        # LOG.info(_LI("Compute claim success: %s") % claim)
                     else:
-                        LOG.info(_LI("Compute claim failed: %s") % claim)
+                        # LOG.info(_LI("Compute claim failed: %s") % claim)
+                        pass
                 else:
                     LOG.error(_LE("Unrecognized compute claim: %s") % claim)
 
@@ -116,7 +117,7 @@ class SchedulerServers(object):
             if commit:
                 if claim:
                     LOG.warn(_LW("EXTRA COMMIT!"))
-                LOG.info(_LI("Host state change: %s") % commit)
+                # LOG.info(_LI("Host state change: %s") % commit)
                 self.host_state.process_commit(commit)
                 for server in self.servers.values():
                     if server.queue is not None:
@@ -259,11 +260,11 @@ class SchedulerServer(object):
                 self.api.send_commit(context, self.manager.host_state,
                                      self.host, self.seed)
             else:
-                LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
-                             "%(commit)s")
-                         % {'scheduler': self.host,
-                            'commit': jobs,
-                            'seed': self.seed})
+                # LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
+                #              "%(commit)s")
+                #          % {'scheduler': self.host,
+                #             'commit': jobs,
+                #             'seed': self.seed})
                 self.api.send_commit(context, jobs, self.host, self.seed)
 
     def disable(self):

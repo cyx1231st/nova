@@ -87,8 +87,8 @@ class SchedulerClients(object):
         client_obj.refresh_state(context, True)
 
     def send_commit(self, context, commit, compute, seed):
-        LOG.debug("Get commit #%(seed)d from host %(compute)s: %(commit)s.",
-                  {"commit": commit, "compute": compute, "seed": seed})
+        # LOG.debug("Get commit #%(seed)d from host %(compute)s: %(commit)s.",
+        #           {"commit": commit, "compute": compute, "seed": seed})
         client_obj = self.clients.get(compute, None)
         if not client_obj:
             client_obj = SharedHostState(compute, self.api, self)
@@ -146,9 +146,9 @@ class SharedHostState(object):
         self.manager.seed += 1
 
         self.host_state.process_claim(claim, True)
-        LOG.debug("Successfully consume from claim %(claim)s, "
-                  "the state is changed to %(state)s!",
-                  {'claim': claim, 'state': self})
+        # LOG.debug("Successfully consume from claim %(claim)s, "
+        #           "the state is changed to %(state)s!",
+        #           {'claim': claim, 'state': self})
         spec_obj.numa_topology = claim['numa_topology']
 
         # track claim
@@ -267,7 +267,7 @@ class SharedHostState(object):
                     success = self.host_state.process_commit(item)
                     LOG.info(_LI("process commit from %(host)s: %(commit)s") %
                              {'host': self.host, 'commit': item})
-                    LOG.debug("Updated state: %s" % self)
+                    # LOG.debug("Updated state: %s" % self)
                 elif 'instance_uuid' in item:
                     seed = item['seed']
                     instance_uuid = item['instance_uuid']
@@ -279,7 +279,7 @@ class SharedHostState(object):
                                   'host': item['host'],
                                   'scheduler': item['from']})
                         self.host_state.process_claim(item, proceed)
-                        LOG.debug("Updated state: %s" % self)
+                        # LOG.debug("Updated state: %s" % self)
                     else:
                         in_track = False
                         if seed in self.claims:
@@ -294,7 +294,7 @@ class SharedHostState(object):
                                      {'instance': instance_uuid,
                                       'host': item['host']})
                             self.host_state.process_claim(item, proceed)
-                            LOG.debug("Updated state: %s"
+                            # LOG.debug("Updated state: %s"
                                       % self)
                         elif in_track and proceed:
                             LOG.info(_LI("succeed %(instance)s to %(host)s") %
@@ -330,12 +330,12 @@ class SharedHostState(object):
             if do_abort:
                 LOG.info(_LI("Abort claim %s!") % claim)
                 self.host_state.process_claim(claim, False)
-                LOG.debug("Updated state: %s" % self)
+                # LOG.debug("Updated state: %s" % self)
             else:
                 LOG.error(_LE("Claim %s not found, abort abort!") % claim)
 
     def track_claim(self, claim):
-        LOG.debug("Tracking claim seed %s" % claim['seed'])
+        # LOG.debug("Tracking claim seed %s" % claim['seed'])
         self.claims[claim['seed']] = claim
 
     def disable(self):

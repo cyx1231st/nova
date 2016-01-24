@@ -89,7 +89,7 @@ class FilterScheduler(driver.Scheduler):
             context, 'scheduler.select_destinations.end',
             dict(request_spec=spec_obj.to_legacy_request_spec_dict()))
 
-        LOG.debug("Claims: %s" % claims)
+        # LOG.debug("Claims: %s" % claims)
         return dests, claims
 
     def _get_configuration_options(self):

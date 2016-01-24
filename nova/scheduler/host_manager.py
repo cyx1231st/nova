@@ -139,16 +139,16 @@ class HostState(object):
             # shared host state should be updated in a consistent way to make
             # sure its data is valid under concurrent write operations.
             if compute is not None:
-                LOG.debug("Update host state from compute node: %s", compute)
+                # LOG.debug("Update host state from compute node: %s", compute)
                 self._update_from_compute_node(compute)
             if aggregates is not None:
-                LOG.debug("Update host state with aggregates: %s", aggregates)
+                # LOG.debug("Update host state with aggregates: %s", aggregates)
                 self.aggregates = aggregates
             if service is not None:
-                LOG.debug("Update host state with service dict: %s", service)
+                # LOG.debug("Update host state with service dict: %s", service)
                 self.service = ReadOnlyDict(service)
             if inst_dict is not None:
-                LOG.debug("Update host state with instances: %s", inst_dict)
+                # LOG.debug("Update host state with instances: %s", inst_dict)
                 self.instances = inst_dict
 
         return _locked_update(self, compute, service, aggregates, inst_dict)
