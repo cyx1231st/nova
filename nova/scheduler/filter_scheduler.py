@@ -52,6 +52,7 @@ class FilterScheduler(driver.Scheduler):
         spec_obj = objects.RequestSpec.from_primitives(context,
                                                        request_spec,
                                                        filter_properties)
+        LOG.info(_LI("request %s") % spec_obj.instance_uuid)
         self.notifier.info(
             context, 'scheduler.select_destinations.start',
             dict(request_spec=spec_obj.to_legacy_request_spec_dict()))
