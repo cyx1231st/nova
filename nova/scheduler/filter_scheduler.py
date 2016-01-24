@@ -66,7 +66,7 @@ class FilterScheduler(driver.Scheduler):
             # refreshed according to database in next schedule, and release
             # the resource consumed by instance in the process of selecting
             # host.
-            #for host in selected_hosts:
+            # for host in selected_hosts:
             #    host.obj.updated = None
 
             # Log the details but don't put those into the reason since
@@ -88,7 +88,7 @@ class FilterScheduler(driver.Scheduler):
             context, 'scheduler.select_destinations.end',
             dict(request_spec=spec_obj.to_legacy_request_spec_dict()))
 
-        LOG.info(_LI("Claims: %s") % claims)
+        LOG.debug("Claims: %s" % claims)
         return dests, claims
 
     def _get_configuration_options(self):
@@ -124,6 +124,7 @@ class FilterScheduler(driver.Scheduler):
                     spec_obj, index=num)
             if not hosts:
                 # Can't get any more locally.
+                LOG.info(_LI("reject_ %s by filters") % spec_obj.instance_uuid)
                 break
 
             LOG.debug("Filtered %(hosts)s", {'hosts': hosts})
@@ -137,7 +138,11 @@ class FilterScheduler(driver.Scheduler):
             if not chosen_host:
                 # Can't get any host locally, use the same logic with the empty
                 # get_filtered_hosts(...).
+                LOG.info(_LI("reject_ %s") % spec_obj.instance_uuid)
                 break
+            LOG.info(_LI("attempt %(instance)s to %(host)s")
+                     % {'instance': spec_obj.instance_uuid,
+                        'host': claim['host']})
             selected_hosts.append(chosen_host)
             claims.append(claim)
 

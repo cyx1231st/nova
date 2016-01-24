@@ -614,7 +614,7 @@ class HostManager(object):
                              "Re-created its InstanceList."), host_name)
                 return
             host_info["updated"] = True
-            LOG.info(_LI("Successfully synced instances from host '%s'."),
+            LOG.debug("Successfully synced instances from host '%s'." %
                      host_name)
         else:
             self._recreate_instance_info(context, host_name)

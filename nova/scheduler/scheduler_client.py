@@ -87,8 +87,8 @@ class SchedulerClients(object):
         client_obj.refresh_state(context, True)
 
     def send_commit(self, context, commit, compute, seed):
-        LOG.info(_LI("Get commit #%(seed)d from host %(compute)s: %(commit)s.")
-                 % {"commit": commit, "compute": compute, "seed": seed})
+        LOG.debug("Get commit #%(seed)d from host %(compute)s: %(commit)s.",
+                  {"commit": commit, "compute": compute, "seed": seed})
         client_obj = self.clients.get(compute, None)
         if not client_obj:
             client_obj = SharedHostState(compute, self.api, self)
@@ -146,9 +146,9 @@ class SharedHostState(object):
         self.manager.seed += 1
 
         self.host_state.process_claim(claim, True)
-        LOG.info(_LI("Successfully consume from claim %(claim)s, "
-                     "the state is changed to %(state)s!")
-                 % {'claim': claim, 'state': self})
+        LOG.debug("Successfully consume from claim %(claim)s, "
+                  "the state is changed to %(state)s!",
+                  {'claim': claim, 'state': self})
         spec_obj.numa_topology = claim['numa_topology']
 
         # track claim
@@ -210,7 +210,8 @@ class SharedHostState(object):
                     self.abort_claims(timeout_claims)
                 self.old_claims = self.claims
                 self.claims = {}
-                pass
+                LOG.info(_LI("Report state %(host)s: %(state)s")
+                         % {'host': self.host, 'state': self})
         else:
             self._handle_tmp()
 
@@ -264,17 +265,21 @@ class SharedHostState(object):
             for item in commit:
                 if 'version_expected' in item:
                     success = self.host_state.process_commit(item)
-                    LOG.info(_LI("Updated state: %s") % self)
+                    LOG.info(_LI("process commit from %(host)s: %(commit)s") %
+                             {'host': self.host, 'commit': item})
+                    LOG.debug("Updated state: %s" % self)
                 elif 'instance_uuid' in item:
                     seed = item['seed']
                     instance_uuid = item['instance_uuid']
                     proceed = item.pop('proceed', True)
                     if item['from'] != self.manager.host:
-                        LOG.info(_LI("Proceed claim from another scheduler "
-                                     "%(scheduler)s: %(claim)s") %
-                                 {'scheduler': item['from'], 'claim': item})
+                        LOG.info(_LI("received %(instance)s to %(host)s from "
+                                     "%(scheduler)s") %
+                                 {'instance': instance_uuid,
+                                  'host': item['host'],
+                                  'scheduler': item['from']})
                         self.host_state.process_claim(item, proceed)
-                        LOG.info(_LI("Updated state: %s") % self)
+                        LOG.debug("Updated state: %s" % self)
                     else:
                         in_track = False
                         if seed in self.claims:
@@ -285,14 +290,16 @@ class SharedHostState(object):
                             in_track = True
 
                         if in_track and not proceed:
-                            LOG.info(_LI("Decision failure for instance %s!")
-                                     % instance_uuid)
+                            LOG.info(_LI("failed_ %(instance)s to %(host)s") %
+                                     {'instance': instance_uuid,
+                                      'host': item['host']})
                             self.host_state.process_claim(item, proceed)
-                            LOG.info(_LI("Updated state: %s")
-                                     % self)
+                            LOG.debug("Updated state: %s"
+                                      % self)
                         elif in_track and proceed:
-                            LOG.info(_LI("Decision success for instance %s!")
-                                     % instance_uuid)
+                            LOG.info(_LI("succeed %(instance)s to %(host)s") %
+                                     {'instance': instance_uuid,
+                                      'host': item['host']})
                         elif not in_track and not proceed:
                             LOG.error(_LE("Outdated decision failure for "
                                           "instance %s!") % instance_uuid)
@@ -300,14 +307,14 @@ class SharedHostState(object):
                             LOG.error(_LE("Outdated decision success for "
                                           "instance %s!") % instance_uuid)
                             self.host_state.process_claim(item, proceed)
-                            LOG.info(_LI("Updated state: %s")
-                                     % self)
+                            LOG.debug("Updated state: %s"
+                                      % self)
                 else:
                     LOG.error(_LE("Unable to handle commit %s!") % item)
             if not success:
-                LOG.info(_LI("Warn: HostState doesn't match."))
+                LOG.info(_LI("HostState doesn't match."))
         else:
-            LOG.info(_LE("The commit comes without hoststate"))
+            LOG.info(_LI("The commit comes without hoststate"))
             self.refresh_state(context, True)
 
     def abort_claims(self, claims):
@@ -323,12 +330,12 @@ class SharedHostState(object):
             if do_abort:
                 LOG.info(_LI("Abort claim %s!") % claim)
                 self.host_state.process_claim(claim, False)
-                LOG.info(_LI("Updated state: %s") % self)
+                LOG.debug("Updated state: %s" % self)
             else:
                 LOG.error(_LE("Claim %s not found, abort abort!") % claim)
 
     def track_claim(self, claim):
-        LOG.info(_LI("Tracking claim seed %s") % claim['seed'])
+        LOG.debug("Tracking claim seed %s" % claim['seed'])
         self.claims[claim['seed']] = claim
 
     def disable(self):
