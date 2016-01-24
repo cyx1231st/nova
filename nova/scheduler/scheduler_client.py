@@ -295,7 +295,7 @@ class SharedHostState(object):
                                       'host': item['host']})
                             self.host_state.process_claim(item, proceed)
                             # LOG.debug("Updated state: %s"
-                                      % self)
+                            #           % self)
                         elif in_track and proceed:
                             LOG.info(_LI("succeed %(instance)s to %(host)s") %
                                      {'instance': instance_uuid,
