@@ -70,11 +70,8 @@ class SchedulerClient(object):
     def sync_instance_info(self, context, host_name, instance_uuids):
         self.queryclient.sync_instance_info(context, host_name, instance_uuids)
 
-    def notify_schedulers(self, context, host_name):
-        self.queryclient.notify_schedulers(context, host_name)
-
-    def notify_scheduler(self, context, compute, scheduler):
-        self.queryclient.notify_scheduler(context, compute, scheduler)
+    def notify_schedulers(self, context, host_name, scheduler=None):
+        self.queryclient.notify_schedulers(context, host_name, scheduler)
 
     def send_commit(self, context, commit, compute, scheduler, seed):
         self.queryclient.send_commit(context, commit, compute, scheduler, seed)

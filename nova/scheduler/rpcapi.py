@@ -135,13 +135,12 @@ class SchedulerAPI(object):
         return cctxt.cast(ctxt, 'sync_instance_info', host_name=host_name,
                           instance_uuids=instance_uuids)
 
-    def notify_schedulers(self, ctxt, host_name):
-        cctxt = self.client.prepare(version='4.0', fanout=True)
+    def notify_schedulers(self, ctxt, host_name, scheduler=None):
+        if scheduler is not None:
+            cctxt = self.client.prepare(version='4.0', server=scheduler)
+        else:
+            cctxt = self.client.prepare(version='4.0', fanout=True)
         return cctxt.cast(ctxt, 'notify_scheduler', host_name=host_name)
-
-    def notify_scheduler(self, ctxt, compute, scheduler):
-        cctxt = self.client.prepare(version='4.0', server=scheduler)
-        cctxt.cast(ctxt, 'notify_scheduler', host_name=compute)
 
     def send_commit(self, ctxt, commit, compute, scheduler, seed):
         cctxt = self.client.prepare(version='4.0', server=scheduler)

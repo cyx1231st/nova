@@ -37,11 +37,8 @@ class APIProxy(object):
     def service_is_up(self, service):
         return self.servicegroup_api.service_is_up(service)
 
-    def notify_schedulers(self, context):
-        return self.scheduler_api.notify_schedulers(context, self.host)
-
-    def notify_scheduler(self, context, scheduler):
-        return self.scheduler_api.notify_scheduler(
+    def notify_schedulers(self, context, scheduler=None):
+        return self.scheduler_api.notify_schedulers(
                 context, self.host, scheduler)
 
     def send_commit(self, context, commit, scheduler, seed):
@@ -221,7 +218,7 @@ class SchedulerServer(object):
             if self.manager.host_state:
                 self.tmp = False
                 if self.queue is None:
-                    self.api.notify_scheduler(context, self.host)
+                    self.api.notify_schedulers(context, self.host)
         else:
             self._handle_tmp()
 
