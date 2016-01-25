@@ -273,7 +273,7 @@ class SharedHostState(object):
                     instance_uuid = item['instance_uuid']
                     proceed = item.pop('proceed', True)
                     if item['from'] != self.manager.host:
-                        LOG.info(_LI("received %(instance)s to %(host)s from "
+                        LOG.info(_LI("receive %(instance)s to %(host)s from "
                                      "%(scheduler)s") %
                                  {'instance': instance_uuid,
                                   'host': item['host'],
