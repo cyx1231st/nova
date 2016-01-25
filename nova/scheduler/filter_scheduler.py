@@ -79,10 +79,14 @@ class FilterScheduler(driver.Scheduler):
                        'num_instances': num_instances})
 
             reason = _('There are not enough hosts available.')
+            LOG.info(_LI("reject_ %s from cache") % spec_obj.instance_uuid)
             raise exception.NoValidHost(reason=reason)
 
         dests = [dict(host=host.obj.host, nodename=host.obj.nodename,
                       limits=host.obj.limits) for host in selected_hosts]
+        LOG.info(_LI("attempt %(instance)s to %(host)s") %
+                 {'instance': spec_obj.instance_uuid,
+                  'host': dests[0].obj.host})
 
         self.notifier.info(
             context, 'scheduler.select_destinations.end',
@@ -121,7 +125,6 @@ class FilterScheduler(driver.Scheduler):
                     spec_obj, index=num)
             if not hosts:
                 # Can't get any more locally.
-                LOG.info(_LI("reject_ %s from cache") % spec_obj.instance_uuid)
                 break
 
             LOG.debug("Filtered %(hosts)s", {'hosts': hosts})
@@ -149,9 +152,6 @@ class FilterScheduler(driver.Scheduler):
                 spec_obj.instance_group.hosts.append(chosen_host.obj.host)
                 # hosts has to be not part of the updates when saving
                 spec_obj.instance_group.obj_reset_changes(['hosts'])
-            LOG.info(_LI("attempt %(instance)s to %(host)s") %
-                     {'instance': spec_obj.instance_uuid,
-                      'host': chosen_host.obj.host})
         return selected_hosts
 
     def _get_all_host_states(self, context):
