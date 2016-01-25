@@ -85,8 +85,7 @@ class FilterScheduler(driver.Scheduler):
         dests = [dict(host=host.obj.host, nodename=host.obj.nodename,
                       limits=host.obj.limits) for host in selected_hosts]
         LOG.info(_LI("attempt %(instance)s to %(host)s") %
-                 {'instance': spec_obj.instance_uuid,
-                  'host': dests[0].obj.host})
+                 {'instance': spec_obj.instance_uuid})
 
         self.notifier.info(
             context, 'scheduler.select_destinations.end',
