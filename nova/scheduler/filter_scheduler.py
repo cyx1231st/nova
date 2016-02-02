@@ -79,7 +79,7 @@ class FilterScheduler(driver.Scheduler):
                        'num_instances': num_instances})
 
             reason = _('There are not enough hosts available.')
-            self.clients.abort_claims(claims)
+            self.cache_manager.abort_claims(claims)
             LOG.info(_LI("reject_ %s") % spec_obj.instance_uuid)
             raise exception.NoValidHost(reason=reason)
 

@@ -39,8 +39,10 @@ class Scheduler(object):
         self.host_manager = importutils.import_object(
                 CONF.scheduler_host_manager)
         self.servicegroup_api = servicegroup.API()
+        self.cache_manager = None
     
     def init_compute_clients(self, cache_manager):
+        self.cache_manager = cache_manager
         self.host_manager.init_compute_clients(cache_manager)
 
     def run_periodic_tasks(self, context):
