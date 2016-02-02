@@ -93,10 +93,10 @@ class RemoteManagerBase(object):
         else:
             return True
 
-
     def activate(self, item=None, seed=None):
         LOG.info(_LE("Remote %s is activated!") % self.host)
-        self.disable()
+        if self._FALLENOUT in self._side_affects:
+            self._side_affects.remove(self._FALLENOUT)
         self.state = self.ACTIVE
         self._activate(item, seed)
 
@@ -105,8 +105,8 @@ class RemoteManagerBase(object):
             if self.is_disabled():
                 self.standby()
             else:
-                self._side_affects.add(self._FALLENOUT)
-            self._side_affects.add(self._TRANCIENT)
+                self._side_affects.add(self._TRANCIENT)
+            self._side_affects.add(self._FALLENOUT)
             LOG.info(_LI("Remote %s is to be refreshed!") % self.host)
             self._refresh(context)
 
@@ -135,6 +135,8 @@ class RemoteManagerBase(object):
                 if self._TRANCIENT in self._side_affects:
                     self._side_affects.remove(self._TRANCIENT)
                 if self._FALLENOUT in self._side_affects:
+                    LOG.error(_LE("Remote %s is still not ready, "
+                                  "refresh again!") % self.host)
                     self._side_affects.remove(self._FALLENOUT)
                     self.refresh(context)
                 self._do_periodical()
