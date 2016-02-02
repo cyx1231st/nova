@@ -47,8 +47,8 @@ class SchedulerManager(manager.Manager):
         self.driver = importutils.import_object(scheduler_driver)
         super(SchedulerManager, self).__init__(service_name='scheduler',
                                                *args, **kwargs)
-        self.clients = scheduler_client.SchedulerClients(self.host)
-        self.driver.init_compute_clients(self.clients)
+        self.cache_manager = scheduler_client.SchedulerClients(self.host)
+        self.driver.init_compute_clients(self.cache_manager)
 
     # @periodic_task.periodic_task
     # def _expire_reservations(self, context):
@@ -58,10 +58,10 @@ class SchedulerManager(manager.Manager):
                                  run_immediately=True)
     def _run_periodic_tasks(self, context):
         self.driver.run_periodic_tasks(context)
-        self.clients.periodically_refresh_clients(context)
+        self.cache_manager.periodically_refresh_remotes(context)
 
     def pre_start_hook(self):
-        self.clients.periodically_refresh_clients(
+        self.cache_manager.periodically_refresh_remotes(
                 nova.context.get_admin_context())
 
     @messaging.expected_exceptions(exception.NoValidHost)
@@ -116,8 +116,8 @@ class SchedulerManager(manager.Manager):
         self.driver.host_manager.sync_instance_info(context, host_name,
                                                     instance_uuids)
 
-    def notify_scheduler(self, context, host_name):
-        self.clients.notify_scheduler(context, host_name)
+    def notified_by_remote(self, context, host_name):
+        self.cache_manager.notified_by_remote(context, host_name)
 
-    def send_commit(self, context, commit, compute, seed):
-        self.clients.send_commit(context, commit, compute, seed)
+    def receive_commit(self, context, commit, compute, seed):
+        self.cache_manager.receive_commit(context, commit, compute, seed)

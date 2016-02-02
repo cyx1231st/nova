@@ -302,10 +302,10 @@ class HostManager(object):
         self._instance_info = {}
         if self.tracks_instance_changes:
             self._init_instance_info()
-        self.clients = None
+        self.cache_manager = None
     
-    def init_compute_clients(self, clients):
-        self.clients = clients
+    def init_compute_clients(self, cache_manager):
+        self.cache_manager = cache_manager
 
     def _load_filters(self):
         return CONF.scheduler_default_filters
@@ -505,9 +505,10 @@ class HostManager(object):
         in HostState are pre-populated and adjusted based on data in the db.
         """
 
-        states = self.clients.get_all_host_states()
+        states = self.cache_manager.get_all_host_states()
         for state in states:
             state.update_from_host_manager(
+                                       context,
                                        self._get_aggregates_info(state.host),
                                        self._get_instance_info(
                                            context,

@@ -140,9 +140,9 @@ class SchedulerAPI(object):
             cctxt = self.client.prepare(version='4.0', server=scheduler)
         else:
             cctxt = self.client.prepare(version='4.0', fanout=True)
-        return cctxt.cast(ctxt, 'notify_scheduler', host_name=host_name)
+        return cctxt.cast(ctxt, 'notified_by_remote', host_name=host_name)
 
     def send_commit(self, ctxt, commit, compute, scheduler, seed):
         cctxt = self.client.prepare(version='4.0', server=scheduler)
-        cctxt.cast(ctxt, 'send_commit',
+        cctxt.cast(ctxt, 'receive_commit',
                    commit=commit, compute=compute, seed=seed)
