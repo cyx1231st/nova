@@ -79,9 +79,9 @@ class RemoteManagerBase(object):
     def disable(self):
         if self.state != self.DISABLED:
             LOG.info(_LI("Remote %s is disabled!") % self.host)
-            self.state = self.DISABLED
-            self._side_affects.clear()
             self._disable()
+            self._side_affects.clear()
+            self.state = self.DISABLED
         else:
             pass
 
@@ -99,11 +99,11 @@ class RemoteManagerBase(object):
 
     def activate(self, item=None, seed=None):
         LOG.info(_LI("Remote %s is refreshed and activated!") % self.host)
+        # TODO(Yingxin): remove extra arguments
+        self._activate(item, seed)
         if self._FALLENOUT in self._side_affects:
             self._side_affects.remove(self._FALLENOUT)
         self.state = self.ACTIVE
-        # TODO(Yingxin): remove extra arguments
-        self._activate(item, seed)
 
     def refresh(self, context, force=False):
         if force or self._FALLENOUT not in self._side_affects:
@@ -250,3 +250,62 @@ class ClaimRecords(object):
                     partial(cache.process_claim, proceed = False)
         else:
             self.abort_callback = None
+
+
+class MessageWindow(Object):
+    def __init__(self, capacity=7):
+        if capacity < 1:
+            LOG.error(_LE("Window capacity %s < 1, set to 1!") % capacity)
+            capacity = 1
+        self.capacity = capacity
+        self.window = []
+        self.seed = None
+
+    def reset(self, seed=None):
+        self.window = []
+        self.seed = seed
+
+    def try_reset(self, seed):
+        if self.seed is not None and \
+                seed < self.seed and self.seed - seed < self.window_max:
+                    LOG.warn(_LE("Reset failed, seed: %(new)s, %(old)s")
+                             % {'new': seed, 'old': self.seed})
+            return False
+        else:
+            return True
+
+    def proceed(self, seed):
+        if not self.seed:
+            LOG.error(_LE("MessageWindow is disabled!"))
+            return False
+
+        if seed <= self.seed:
+            index = bisect.bisect_left(self.window, seed)
+            if seed == self.seed or self.window[index] != seed:
+                LOG.error(_LE("Deprecated message#%d, ignore!") % seed)
+                return False
+            else:
+                LOG.warn(_LW("A lost message#%d!") % seed)
+                del self.window[index]
+        elif seed == self.seed + 1:
+            self.seed = seed
+        else: # seed > self.seed + 1
+            if seed - self.seed > self.window_max:
+                LOG.error(_LE("A gient gap between %(from)d and %(to)d, "
+                    "refresh state!") % {'from': self.seed, 'to': seed})
+                self.reset()
+                raise KeyError()
+            else:
+                for i in range(self.seed + 1, seed):
+                    self.window.append(i)
+                self.seed = seed
+
+        if self.window:
+            LOG.info(_LI("Missing commits: %s.") % self.window)
+            if self.seed - self.window[0] >= self.window_max:
+                LOG.error(_LE("Lost exceed window capacity %d, abort!")
+                          % self.window_max)
+                self.reset()
+                raise KeyError()
+
+        return True

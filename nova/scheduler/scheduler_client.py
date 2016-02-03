@@ -40,11 +40,7 @@ class APIProxy(cache_manager.APIProxyBase):
 class SharedHostState(cache_manager.RemoteManagerBase):
     def __init__(self, host, api, manager):
         super(SharedHostState, self).__init__(host, api, manager)
-        # the min window is 1
-        self.window_max = 7
-
-        self.seed = None
-        self.window = None
+        self.message_window = cache_manager.MessageWindow()
         self.claim_records = cache_manager.ClaimRecords()
 
         # host state specific
@@ -109,18 +105,24 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         self.api.report_host_state(context, self.host)
 
     def _activate(self, cache, seed):
+        if self.is_activated() and \
+                not self.message_window.try_reset(seed):
+            # NOTE(Yingxin): In case multiple caches are coming and they are
+            # reordered.
+            LOG.warn(_LW("Ignore cache: %s") % cache)
+            return
+        self.message_window.reset(seed)
         self.host_state = cache
         self.claim_records.reset(cache)
-        self.seed = seed
         self.manager.ready_states[self.host] = self
-        self.window = []
 
     def _disable(self):
+        self.message_window.reset()
+        # TODO(Yingxin): Cannot simply set to None unless scheduler accepts
+        # empty host state.
         self.host_state = None
-        self.seed = None
-        self.window = None
-        self.manager.ready_states.pop(self.host, None)
         self.claim_records.reset()
+        self.manager.ready_states.pop(self.host, None)
 
     def process_commit(self, context, commit, seed):
         if isinstance(commit, objects.HostState):
@@ -130,35 +132,12 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         if not self.expect_active(context):
             return
 
-        # check window
-        if seed <= self.seed:
-            index = bisect.bisect_left(self.window, seed)
-            if seed == self.seed or self.window[index] != seed:
-                LOG.error(_LE("Old commit#%d, ignore!") % seed)
+        try:
+            if not self.message_window.proceed(seed):
                 return
-            else:
-                LOG.info(_LI("A lost commit#%d!") % seed)
-                del self.window[index]
-        elif seed == self.seed + 1:
-            self.seed = seed
-        else:
-            if seed - self.seed > self.window_max:
-                LOG.error(_LE("A gient gap between %(from)d and %(to)d, "
-                    "refresh state!") % {'from': self.seed, 'to': seed})
-                self.refresh(context)
-                return
-            else:
-                for i in range(self.seed + 1, seed):
-                    self.window.append(i)
-            self.seed = seed
-
-        if self.window:
-            LOG.info(_LI("Missing commits: %s.") % self.window)
-            if self.seed - self.window[0] >= self.window_max:
-                LOG.error(_LE("Lost exceed window capacity %d, abort!")
-                          % self.window_max)
-                self.refresh(context)
-                return
+        except KeyError:
+            self.refresh(context)
+            return
 
         success = True
         for item in commit:
