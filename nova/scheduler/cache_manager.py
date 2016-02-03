@@ -252,7 +252,7 @@ class ClaimRecords(object):
             self.abort_callback = None
 
 
-class MessageWindow(Object):
+class MessageWindow(object):
     def __init__(self, capacity=7):
         if capacity < 1:
             LOG.error(_LE("Window capacity %s < 1, set to 1!") % capacity)
@@ -268,8 +268,8 @@ class MessageWindow(Object):
     def try_reset(self, seed):
         if self.seed is not None and \
                 seed < self.seed and self.seed - seed < self.window_max:
-                    LOG.warn(_LE("Reset failed, seed: %(new)s, %(old)s")
-                             % {'new': seed, 'old': self.seed})
+            LOG.warn(_LE("Reset failed, seed: %(new)s, %(old)s")
+                     % {'new': seed, 'old': self.seed})
             return False
         else:
             return True
