@@ -111,7 +111,7 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
 class SchedulerServers(cache_manager.CacheManagerBase):
     API_PROXY = APIProxy
     REMOTE_MANAGER = SchedulerServer
-    SERVICE_NAME = 'nova_scheduler'
+    SERVICE_NAME = 'nova-scheduler'
 
     def __init__(self, host):
         super(SchedulerServers, self).__init__(host)

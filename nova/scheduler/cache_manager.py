@@ -132,12 +132,13 @@ class RemoteManagerBase(object):
             LOG.info(_LI("Remote %s service is disabled!") % self.host)
             self.disable()
         elif self.api.service_is_up(service):
-            if self._TRANCIENT in self._side_affects:
-                self._side_affects.remove(self._TRANCIENT)
             if not self.is_activated():
                 LOG.info(_LI("Remote %s service is up!") % self.host)
+                self._side_affects.clear()
                 self.refresh(context)
             else:
+                if self._TRANCIENT in self._side_affects:
+                    self._side_affects.remove(self._TRANCIENT)
                 if self._FALLENOUT in self._side_affects:
                     LOG.error(_LE("Remote %s is still not ready, "
                                   "refresh again!") % self.host)
