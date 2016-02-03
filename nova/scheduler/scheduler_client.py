@@ -43,6 +43,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                 label=self.host)
         self.claim_records = cache_manager.ClaimRecords(
                 label=self.host)
+        self.seed = random.randint(0, 1000000)
 
         # host state specific
         self.host_state = None
@@ -157,9 +158,9 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         if not self.is_activated():
             raise RuntimeError("HostState %s is unavailable!" % self.host)
         claim = self.host_state.claim(spec_obj, self.limits)
-        claim['seed'] = self.manager.seed
+        claim['seed'] = self.seed
         claim['from'] = self.manager.host
-        self.manager.seed += 1
+        self.seed += 1
 
         self.host_state.process_claim(claim, True)
         LOG.debug("Successfully consume from claim %(claim)s, "
@@ -202,7 +203,6 @@ class SchedulerClients(cache_manager.CacheManagerBase):
 
     def __init__(self, host):
         super(SchedulerClients, self).__init__(host)
-        self.seed = random.randint(0, 1000000)
 
     def receive_commit(self, context, commit, compute, seed):
         LOG.debug("Get commit #%(seed)d from host %(compute)s: %(commit)s.",
