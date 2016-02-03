@@ -35,11 +35,9 @@ class RemoteManagerBase(object):
     DISABLED = "DISABLED"
     STANDBY = "STANDBY"
     ACTIVE = "ACTIVE"
-    STATES = {DISABLED, STANDBY, ACTIVE}
 
     _TRANCIENT = "TRANCIENT"
     _FALLENOUT = "FALLENOUT"
-    _SIDE_AFFECTS = {_TRANCIENT, _FALLENOUT}
 
     def __init__(self, host, api, manager, nodename=None):
         self.host = host
@@ -64,6 +62,14 @@ class RemoteManagerBase(object):
     def _do_periodical(self):
         pass
 
+    def standby(self):
+        self.state = self.STANDBY
+        self._side_affects.clear()
+        self._side_affects.add(self._TRANCIENT)
+
+    def is_disabled(self):
+        return self.state == self.DISABLED
+
     def disable(self):
         if self.state != self.DISABLED:
             LOG.info(_LI("Disable remote %s.") % self.host)
@@ -72,14 +78,6 @@ class RemoteManagerBase(object):
             self._disable()
         else:
             pass
-
-    def standby(self):
-        self.state = self.STANDBY
-        self._side_affects.clear()
-        self._side_affects.add(self._TRANCIENT)
-
-    def is_disabled(self):
-        return self.state == self.DISABLED
 
     def is_activated(self):
         return self.state == self.ACTIVE
@@ -94,7 +92,7 @@ class RemoteManagerBase(object):
             return True
 
     def activate(self, item=None, seed=None):
-        LOG.info(_LE("Remote %s is activated!") % self.host)
+        LOG.info(_LE("Remote %s is refreshed and activated!") % self.host)
         if self._FALLENOUT in self._side_affects:
             self._side_affects.remove(self._FALLENOUT)
         self.state = self.ACTIVE
@@ -156,6 +154,9 @@ class CacheManagerBase(object):
         self.api = self.API_PROXY(host)
         self.remotes = {}
 
+    def _do_periodicals(self):
+        pass
+
     def periodically_refresh_remotes(self, context):
         service_refs = {service.host: service
                         for service in objects.ServiceList.get_by_binary(
@@ -182,6 +183,8 @@ class CacheManagerBase(object):
 
         for remote in self.remotes.values():
             remote.sync(context, service_refs.get(remote.host, None))
+
+        self._do_periodicals()
 
     def _get_remote(self, host, label):
         remote_obj = self.remotes.get(host, None)

@@ -718,7 +718,8 @@ class ComputeManager(manager.Manager):
         super(ComputeManager, self).__init__(service_name="compute",
                                              *args, **kwargs)
 
-        self.scheduler_servers = scheduler_server.SchedulerServers(self.host)
+        self.scheduler_cachemanager = \
+                scheduler_server.SchedulerServers(self.host)
 
         # NOTE(russellb) Load the driver last.  It may call back into the
         # compute manager via the virtapi, so we want it to be fully
@@ -743,7 +744,7 @@ class ComputeManager(manager.Manager):
             rt = resource_tracker.ResourceTracker(self.host,
                                                   self.driver,
                                                   nodename,
-                                                  self.scheduler_servers)
+                                                  self.scheduler_cachemanager)
             self._resource_tracker_dict[nodename] = rt
         return rt
 
@@ -2004,7 +2005,7 @@ class ComputeManager(manager.Manager):
         self._notify_about_instance_usage(context, instance, 'create.start',
                 extra_usage_info={'image_name': image_name})
         try:
-            self.scheduler_servers.claim(claim, limits)
+            self.scheduler_cachemanager.claim(context, claim, limits)
             rt = self._get_resource_tracker(node)
             with rt.instance_claim(context, instance, limits, claim):
                 # NOTE(russellb) It's important that this validation be done
@@ -6671,9 +6672,9 @@ class ComputeManager(manager.Manager):
 
     @wrap_exception()
     def report_host_state(self, context, compute_node, scheduler):
-        return self.scheduler_servers.report_host_state(
-                compute_node, scheduler)
+        return self.scheduler_cachemanager.notified_by_remote(
+                context, scheduler)
         
     @periodic_task.periodic_task
-    def periodically_refresh_servers(self, context):
-        self.scheduler_servers.periodically_refresh_servers(context)
+    def periodically_refresh_scheduler_remotes(self, context):
+        self.scheduler_cachemanager.periodically_refresh_remotes(context)

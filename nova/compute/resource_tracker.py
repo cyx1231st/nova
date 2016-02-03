@@ -119,7 +119,7 @@ class ResourceTracker(object):
     are built and destroyed.
     """
 
-    def __init__(self, host, driver, nodename, scheduler_servers):
+    def __init__(self, host, driver, nodename, scheduler_cachemanager):
         self.host = host
         self.driver = driver
         self.pci_tracker = None
@@ -137,7 +137,7 @@ class ResourceTracker(object):
         self.ram_allocation_ratio = CONF.ram_allocation_ratio
         self.cpu_allocation_ratio = CONF.cpu_allocation_ratio
 
-        self.scheduler_servers = scheduler_servers
+        self.scheduler_cachemanager = scheduler_cachemanager
 
     @utils.synchronized(COMPUTE_RESOURCE_SEMAPHORE)
     def instance_claim(self, context, instance_ref, limits=None,
@@ -668,7 +668,7 @@ class ResourceTracker(object):
         self.scheduler_client.update_resource_stats(self.compute_node)
         if self.pci_tracker:
             self.pci_tracker.save(context)
-        self.scheduler_servers.update_from_compute(
+        self.scheduler_cachemanager.update_from_compute(
                 context, self.compute_node,
                 claim=scheduler_claim, proceed=proceed)
 

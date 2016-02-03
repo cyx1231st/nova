@@ -21,6 +21,7 @@ import nova
 from nova import exception
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
+from nova.scheduler import cache_manager
 from nova.scheduler import client as scheduler_client
 from nova import servicegroup
 from nova import utils
@@ -28,14 +29,10 @@ from nova import utils
 LOG = logging.getLogger(__name__)
 
 
-class APIProxy(object):
+class APIProxy(cache_manager.APIProxyBase):
     def __init__(self, host):
-        self.host = host
-        self.servicegroup_api = servicegroup.API()
+        super(APIProxy, self).__init__(host)
         self.scheduler_api = scheduler_client.SchedulerClient()
-
-    def service_is_up(self, service):
-        return self.servicegroup_api.service_is_up(service)
 
     def notify_schedulers(self, context, scheduler=None):
         return self.scheduler_api.notify_schedulers(
@@ -46,43 +43,107 @@ class APIProxy(object):
                 context, commit, self.host, scheduler, seed)
 
 
-class SchedulerServers(object):
+class SchedulerServer(cache_manager.RemoteManagerBase):
+    def __init__(self, host, api, manager):
+        super(SchedulerServer, self).__init__(host, api, manager)
+        self.queue = None
+        self.thread = None
+        self.seed = random.randint(0, 1000000)
+        LOG.info(_LI("Seed %d") % self.seed)
+
+    def send_claim(self, context, claim, proceed):
+        self.expect_active(context)
+        claim['proceed'] = proceed
+        self.queue.put_nowait(claim)
+
+    def send_commit(self, context, commit)
+        self.expect_active(context)
+        self.queue.put_nowait(commit)
+
+    def _activate(self):
+        self.queue = queue.Queue()
+        self.queue.put_nowait("refresh")
+        if not self.thread:
+            self.thread = utils.spawn(
+                self._dispatch_commits, nova.context.get_admin_context())
+
+    def _refresh(self):
+        if self.manager.host_state:
+            self.activate()
+
+    def _disable(self):
+        self.queue = None
+        if self.thread:
+            self.thread.kill()
+
+    def _dispatch_commits(self, context):
+        while True:
+            if not self.manager.host_state:
+                LOG.error(_LE("No host_state available in %s, abort!")
+                          % self.host)
+                self.disable()
+
+            if not self.is_activated():
+                LOG.error(_LE("Remote %s not activated, abort!")
+                          % self.host)
+                self.disable()
+
+            jobs = []
+            jobs.append(self.queue.get())
+            for i in range(self.queue.qsize(), 0, -1):
+                jobs.append(self.queue.get_nowait())
+
+            self.seed = self.seed + 1
+            if jobs[0] == "refresh":
+                LOG.info(_LI("Scheduler %(host)s is refreshed by %(seed)d!")
+                         % {'host': self.host, 'seed': self.seed})
+                self.api.send_commit(context, self.manager.host_state,
+                                     self.host, self.seed)
+            else:
+                LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
+                             "%(commit)s")
+                         % {'scheduler': self.host,
+                            'commit': jobs,
+                            'seed': self.seed})
+                self.api.send_commit(context, jobs, self.host, self.seed)
+
+
+class SchedulerServers(cache_manager.CacheManagerBase):
+    API_PROXY = APIProxy
+    REMOTE_MANAGER = SchedulerServer
+    SERVICE_NAME = 'nova_scheduler'
+
     def __init__(self, host):
-        self.servers = {}
+        super(SchedulerServers, self).__init__(host)
         self.host_state = None
         self.compute_state = None
-        self.host = host
-        self.api = APIProxy(host)
-
         self.claims = {}
         self.old_claims = {}
 
-    def claim(self, claim, limits):
+    def claim(self, context, claim, limits):
         try:
             self.host_state.claim(claim, limits)
         except exception.ComputeResourcesUnavailable as e:
-            self._fail_claim(claim)
+            self._fail_claim(context, claim)
             raise e
 
-        self._success_claim(claim)
+        self._success_claim(context, claim)
 
-    def _fail_claim(self, claim):
-            LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
-                     % {'scheduler': claim['from'], 'claim': claim})
-            server_obj = self.servers.get(claim['from'], None)
-            if server_obj:
-                server_obj.send_claim(claim, False)
-            else:
-                LOG.error(_LE("Cannot abort claim because scheduer %s is "
-                              "unavailable!") % claim['from'])
+    def _fail_claim(self, context, claim):
+        host = claim['from']
+        LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
+                 % {'scheduler': host, 'claim': claim})
+        remote_obj = self._get_remote(host, "claim_fail")
+        remote_obj.send_claim(context, claim, False)
 
-    def _success_claim(self, claim):
+    def _success_claim(self, context, claim):
+        host = claim['from']
         LOG.info(_LI("Success scheduler %(scheduler)s claim: %(claim)s!")
-                 % {'scheduler': claim['from'], 'claim': claim})
+                 % {'scheduler': host, 'claim': claim})
         self.host_state.process_claim(claim, True)
         self.claims[claim['seed']] = claim
-        for server in self.servers.values():
-            server.send_claim(claim, True)
+        for remote in self.remotes.values():
+            remote.send_claim(context, claim, True)
 
     def update_from_compute(self, context, compute, claim, proceed):
         if not self.host_state:
@@ -115,58 +176,10 @@ class SchedulerServers(object):
                     LOG.warn(_LW("EXTRA COMMIT!"))
                 LOG.info(_LI("Host state change: %s") % commit)
                 self.host_state.process_commit(commit)
-                for server in self.servers.values():
-                    if server.queue is not None:
-                        server.queue.put_nowait(commit)
+                for remote in self.remotes.values():
+                    remote.send_commit(context, commit)
 
-    def report_host_state(self, compute, scheduler):
-        if compute != self.host:
-            LOG.error(_LE("Message sent to a wrong host"
-                          "%(actual)s, expected %(expected)s!"),
-                      {'actual': self.host, 'expected': compute})
-            return
-        # elif not self.host_state:
-        #    LOG.error(_LW("The host %s isn't ready yet!") % self.host)
-        #    return
-
-        server_obj = self.servers.get(scheduler, None)
-        if not server_obj:
-            server_obj = SchedulerServer(scheduler, self.api, self)
-            self.servers[scheduler] = server_obj
-            LOG.info(_LW("Added new scheduler %s from request.") % scheduler)
-
-        server_obj.refresh_state()
-        return
-        # return self.host_state, server_obj.seed
-
-    def periodically_refresh_servers(self, context):
-        LOG.info(_LI("Report host state: %s") % self.host_state)
-        service_refs = {service.host: service
-                        for service in objects.ServiceList.get_by_binary(
-                            context, 'nova-scheduler')}
-        service_keys_db = set(service_refs.keys())
-        service_keys_cache = set(self.servers.keys())
-
-        new_keys = service_keys_db - service_keys_cache
-        old_keys = service_keys_cache - service_keys_db
-
-        for new_key in new_keys:
-            server_obj = SchedulerServer(
-                    service_refs[new_key].host, self.api, self)
-            self.servers[new_key] = server_obj
-            LOG.info(_LI("Added new scheduler %s from db.") % new_key)
-
-        for old_key in old_keys:
-            server_obj = self.servers[old_key]
-            if server_obj.queue is None:
-                LOG.error(_LI("Remove non-exist scheduler %s") % old_key)
-                del self.servers[old_key]
-            else:
-                LOG.info(_LI("Keep non-exist scheduler %s") % old_key)
-
-        for server in self.servers.values():
-            server.sync(context, service_refs.get(server.host, None))
-
+    def _do_periodicals(self):
         if self.host_state:
             timeout_claims = self.old_claims.values()
             if timeout_claims:
@@ -175,97 +188,3 @@ class SchedulerServers(object):
                     self.host_state.process_claim(claim, False)
             self.old_claims = self.claims
             self.claims = {}
-
-
-class SchedulerServer(object):
-    def __init__(self, host, api, manager):
-        self.host = host
-        self.manager = manager
-        self.queue = None
-        self.api = api
-        self.tmp = False
-        self.thread = None
-        self.seed = random.randint(0, 1000000)
-        LOG.info(_LI("Seed %d") % self.seed)
-
-    def _handle_tmp(self):
-        if self.queue is not None:
-            if self.tmp:
-                LOG.info(_LI("Keep scheduler %s!")
-                         % self.host)
-                self.tmp = False
-            else:
-                LOG.info(_LI("Disable scheduler %s!")
-                         % self.host)
-                self.disable()
-        else:
-            self.tmp = False
-
-    def send_claim(self, claim, proceed):
-        if self.queue is not None:
-            claim['proceed'] = proceed
-            self.queue.put_nowait(claim)
-
-    def sync(self, context, service):
-        if not service:
-            LOG.info(_LI("No service entry of scheduler %s!") % self.host)
-            self._handle_tmp()
-        elif service['disabled']:
-            LOG.info(_LI("Service scheduler %s is disabled!")
-                     % self.host)
-            self.disable()
-        elif self.api.service_is_up(service):
-            if self.manager.host_state:
-                self.tmp = False
-                if self.queue is None:
-                    self.api.notify_schedulers(context, self.host)
-        else:
-            self._handle_tmp()
-
-    def refresh_state(self):
-        LOG.info(_LI("Scheduler %s is to be refreshed!") % self.host)
-        self.disable()
-
-        self.tmp = True
-        self.queue = queue.Queue()
-        self.queue.put_nowait("refresh")
-        self.thread = utils.spawn(
-            self._dispatch_commits, nova.context.get_admin_context())
-
-    def _dispatch_commits(self, context):
-        while True:
-            if not self.manager.host_state:
-                LOG.error(_LE("No host_state available in %s, abort!")
-                          % self.host)
-                self.disable()
-
-            if not self.queue:
-                LOG.error(_LE("No queue available in %s, abort!")
-                          % self.host)
-                self.disable()
-
-            jobs = []
-            jobs.append(self.queue.get())
-            for i in range(self.queue.qsize(), 0, -1):
-                jobs.append(self.queue.get_nowait())
-
-            self.seed = self.seed + 1
-            if jobs[0] == "refresh":
-                LOG.info(_LI("Scheduler %(host)s is refreshed by %(seed)d!")
-                         % {'host': self.host, 'seed': self.seed})
-                self.api.send_commit(context, self.manager.host_state,
-                                     self.host, self.seed)
-            else:
-                LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
-                             "%(commit)s")
-                         % {'scheduler': self.host,
-                            'commit': jobs,
-                            'seed': self.seed})
-                self.api.send_commit(context, jobs, self.host, self.seed)
-
-    def disable(self):
-        self.tmp = False
-        self.queue = None
-        # this must be the last one
-        if self.thread:
-            self.thread.kill()
