@@ -19,7 +19,7 @@ import random
 from oslo_log import log as logging
 
 from nova.compute import rpcapi as compute_rpcapi
-from nova.i18n import _LI, _LE
+from nova.i18n import _LI, _LE, _LW
 from nova import objects
 from nova.pci import stats as pci_stats
 from nova.scheduler import cache_manager

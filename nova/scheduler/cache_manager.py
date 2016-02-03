@@ -81,10 +81,10 @@ class RemoteManagerBase(object):
 
     def disable(self):
         if self.state != self.DISABLED:
-            LOG.info(_LI("Remote %s is disabled!") % self.host)
             self._disable()
             self._side_affects.clear()
             self.state = self.DISABLED
+            LOG.info(_LI("Remote %s is disabled!") % self.host)
         else:
             pass
 
@@ -92,6 +92,10 @@ class RemoteManagerBase(object):
         return self.state == self.ACTIVE
 
     def expect_active(self, context):
+        # NOTE(Yingxin): This should be only used in methods called by RPC,
+        # in order to notify remote services even if the servicegroup record is
+        # not available. The misuse of this method can cause fake active
+        # state.
         if not self.is_activated():
             LOG.error(_LE("Remote %s is not active, refreshing...")
                       % self.host)
@@ -101,12 +105,12 @@ class RemoteManagerBase(object):
             return True
 
     def activate(self, item=None, seed=None):
-        LOG.info(_LI("Remote %s is refreshed and activated!") % self.host)
         # TODO(Yingxin): remove extra arguments
         self._activate(item, seed)
         if self._FALLENOUT in self._side_affects:
             self._side_affects.remove(self._FALLENOUT)
         self.state = self.ACTIVE
+        LOG.info(_LI("Remote %s is refreshed and activated!") % self.host)
 
     def refresh(self, context, force=False):
         if force or self._FALLENOUT not in self._side_affects:
@@ -152,7 +156,8 @@ class RemoteManagerBase(object):
                 self._do_periodical()
         else:
             if not self.is_disabled():
-                LOG.info(_LI("Remote %s service heartbeat timeout!") % self.host)
+                LOG.info(_LI("Remote %s service heartbeat timeout!")
+                         % self.host)
                 self._handle_trancient()
 
 
