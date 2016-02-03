@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import bisect
 import random
 
 from oslo_log import log as logging
@@ -40,15 +39,17 @@ class APIProxy(cache_manager.APIProxyBase):
 class SharedHostState(cache_manager.RemoteManagerBase):
     def __init__(self, host, api, manager):
         super(SharedHostState, self).__init__(host, api, manager)
-        self.message_window = cache_manager.MessageWindow()
-        self.claim_records = cache_manager.ClaimRecords()
+        self.message_window = cache_manager.MessageWindow(
+                label=self.host)
+        self.claim_records = cache_manager.ClaimRecords(
+                label=self.host)
 
         # host state specific
         self.host_state = None
         self.aggregates = []
         self.instances = {}
         self.limits = {}
-        
+
         # TODO(Yingxin): remove after implemented
         self.pci_stats = pci_stats.PciDeviceStats()
 

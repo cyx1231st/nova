@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import bisect
 from eventlet import queue
 from functools import partial
 
@@ -179,8 +180,8 @@ class CacheManagerBase(object):
         if not remote_obj:
             remote_obj = self.REMOTE_MANAGER(host, self.api, self)
             self.remotes[host] = remote_obj
-            LOG.warn(_LW("Added new remote %(host)s labeled %(label)s"
-                     % {'host': host, 'label': label}))
+            LOG.warn(_LW("Added new remote %(host)s labeled %(label)s")
+                     % {'host': host, 'label': label})
         return remote_obj
 
     def notified_by_remote(self, context, remote_host):
@@ -219,24 +220,26 @@ class CacheManagerBase(object):
 
 
 class ClaimRecords(object):
-    def __init__(self):
+    def __init__(self, label="?"):
         self.claims = {}
         self.old_claims = {}
         self.abort_callback = None
+        self.label = label
 
     def track(self, seed, claim):
         if not self.abort_callback:
-            LOG.error(_LE("ClaimRecords is disabled!"))
+            LOG.error(_LE("ClaimRecords %s is disabled!") % self.label)
             return
         self.claims[seed] = claim
 
     def timeout(self):
         if not self.abort_callback:
-            LOG.error(_LE("ClaimRecords is disabled!"))
+            LOG.error(_LE("ClaimRecords %s is disabled!") % self.label)
             return
         timeout_claims = self.old_claims.values()
         if timeout_claims:
-            LOG.warn(_LW("Time out claims %s") % timeout_claims)
+            LOG.warn(_LW("ClaimRecords %(label)s timeout claims %(claims)s")
+                     % {'label': self.label, 'claims': timeout_claims})
             for claim in timeout_claims:
                 self.abort_callback(claim)
         self.old_claims = self.claims
@@ -244,7 +247,7 @@ class ClaimRecords(object):
 
     def pop(self, seed):
         if not self.abort_callback:
-            LOG.error(_LE("ClaimRecords is disabled!"))
+            LOG.error(_LE("ClaimRecords %s is disabled!") % self.label)
             return
         claim = self.claims.pop(seed, None)
         old_claim = self.old_claims.pop(seed, None)
@@ -261,13 +264,14 @@ class ClaimRecords(object):
 
 
 class MessageWindow(object):
-    def __init__(self, capacity=7):
+    def __init__(self, capacity=7, label="?"):
         if capacity < 1:
             LOG.error(_LE("Window capacity %s < 1, set to 1!") % capacity)
             capacity = 1
         self.capacity = capacity
         self.window = []
         self.seed = None
+        self.label = label
 
     def reset(self, seed=None):
         self.window = []
@@ -284,7 +288,7 @@ class MessageWindow(object):
 
     def proceed(self, seed):
         if not self.seed:
-            LOG.error(_LE("MessageWindow is disabled!"))
+            LOG.error(_LE("MessageWindow %s is disabled!") % self.label)
             return False
 
         if seed <= self.seed:
@@ -297,7 +301,7 @@ class MessageWindow(object):
                 del self.window[index]
         elif seed == self.seed + 1:
             self.seed = seed
-        else: # seed > self.seed + 1
+        else:  # seed > self.seed + 1
             if seed - self.seed > self.capacity:
                 LOG.error(_LE("A gient gap between %(from)d and %(to)d, "
                     "refresh state!") % {'from': self.seed, 'to': seed})
@@ -320,25 +324,27 @@ class MessageWindow(object):
 
 
 class MessagePipe(object):
-    def __init__(self, consume_callback, async_mode=True):
+    def __init__(self, consume_callback, async_mode=True, label="?"):
         self.async_mode = async_mode
         self.queue = None
         self.thread = None
         self.consume_callback = consume_callback
         self.context = nova.context.get_admin_context()
         self.enabled = False
+        self.label = label
 
     def _dispatch_msgs(self):
         while True:
             if not self.enabled:
-                LOG.error(_LE("MessagePipe is disabled, cannot spawn!"))
+                LOG.error(_LE("MessagePipe %s is disabled, cannot spawn!")
+                          % self.label)
                 return
             msgs = []
             msgs.append(self.queue.get())
             for i in range(self.queue.qsize(), 0, -1):
                 msgs.append(self.queue.get_nowait())
-            self.consume_callback(context = self.context,
-                                  messages = msgs)
+            self.consume_callback(context=self.context,
+                                  messages=msgs)
 
     def activate(self, initial_msg=None):
         self.queue = queue.Queue()
@@ -357,7 +363,8 @@ class MessagePipe(object):
 
     def put(self, msg):
         if not self.enabled:
-            LOG.error(_LE("MessagePipe is disabled, cannot put msg %s!")
-                      % msg)
+            LOG.error(_LE("MessagePipe %(label)s is disabled, "
+                          "cannot put msg %(msg)s!")
+                      % {'label': self.label, 'msg': msg})
             return
         self.queue.put_nowait(msg)

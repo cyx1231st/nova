@@ -33,18 +33,18 @@ class APIProxy(cache_manager.APIProxyBase):
 
     def notify_schedulers(self, context, scheduler=None):
         return self.scheduler_api.notify_schedulers(
-                context, self.host, scheduler)
+            context, self.host, scheduler)
 
     def send_commit(self, context, commit, scheduler, seed):
         return self.scheduler_api.send_commit(
-                context, commit, self.host, scheduler, seed)
+            context, commit, self.host, scheduler, seed)
 
 
 class SchedulerServer(cache_manager.RemoteManagerBase):
     def __init__(self, host, api, manager):
         super(SchedulerServer, self).__init__(host, api, manager)
         self.message_pipe = cache_manager.MessagePipe(
-                self._dispatch_commits, True)
+            self._dispatch_commits, True, label=self.host)
         self.seed = random.randint(0, 1000000)
         LOG.info(_LI("Seed %d") % self.seed)
 
