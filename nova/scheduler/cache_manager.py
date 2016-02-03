@@ -115,8 +115,8 @@ class RemoteManagerBase(object):
 
     def _handle_trancient(self):
         # TODO(Yingxin): change to timeout and disable
-        if self.is_disabled():
-            return
+        if not self.is_activated():
+            self.disable()
         try:
             self._side_affects.remove(self._TRANCIENT)
             LOG.info(_LI("Keep trancient remote %s") % self.host)
