@@ -351,13 +351,14 @@ class MessagePipe(object):
                                   messages=msgs)
 
     def activate(self, initial_msg=None):
-        self.queue = queue.Queue()
-        if initial_msg is not None:
-            self.queue.put_nowait(initial_msg)
-        if self.thread:
-            self.thread.kill()
-        self.thread = utils.spawn(self._dispatch_msgs)
+        if self.async_mode:
+            self.queue = queue.Queue()
+            if self.thread:
+                self.thread.kill()
+            self.thread = utils.spawn(self._dispatch_msgs)
         self.enabled = True
+        if initial_msg is not None:
+            self.put(initial_msg)
 
     def disable(self):
         self.queue = None
@@ -371,4 +372,8 @@ class MessagePipe(object):
                           "cannot put msg %(msg)s!")
                       % {'label': self.label, 'msg': msg})
             return
-        self.queue.put_nowait(msg)
+        if self.async_mode:
+            self.queue.put_nowait(msg)
+        else:
+            self.consume_callback(context=self.context,
+                                  messages=[msg])
