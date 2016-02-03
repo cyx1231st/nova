@@ -84,7 +84,7 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
 
     def send_commit(self, context, commit):
         # Do not send anything when not activated
-        if not self.is_activated:
+        if not self.is_activated():
             return
         self.message_pipe.put(commit)
 
@@ -121,7 +121,7 @@ class SchedulerServers(cache_manager.CacheManagerBase):
                  % {'scheduler': claim['from'], 'claim': claim})
         self.host_state.process_claim(claim, True)
         self.claim_records.track(claim['seed'], claim)
-        for remote in self.remotes.values():
+        for remote in self.active_remotes.values():
             remote.send_claim(context, claim, True)
 
     def update_from_compute(self, context, compute, claim, proceed):
@@ -152,5 +152,5 @@ class SchedulerServers(cache_manager.CacheManagerBase):
                     LOG.warn(_LW("EXTRA COMMIT!"))
                 LOG.info(_LI("Host state change: %s") % commit)
                 self.host_state.process_commit(commit)
-                for remote in self.remotes.values():
+                for remote in self.active_remotes.values():
                     remote.send_commit(context, commit)

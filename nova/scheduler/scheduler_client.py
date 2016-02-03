@@ -63,7 +63,6 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         self.message_window.reset(seed)
         self.host_state = cache
         self.claim_records.reset(cache)
-        self.manager.ready_states[self.host] = self
 
     def _disable(self):
         self.message_window.reset()
@@ -71,7 +70,6 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         # empty host state.
         self.host_state = None
         self.claim_records.reset()
-        self.manager.ready_states.pop(self.host, None)
 
     def _refresh(self, context):
         self.api.report_host_state(context, self.host)
@@ -204,7 +202,6 @@ class SchedulerClients(cache_manager.CacheManagerBase):
 
     def __init__(self, host):
         super(SchedulerClients, self).__init__(host)
-        self.ready_states = {}
         self.seed = random.randint(0, 1000000)
 
     def receive_commit(self, context, commit, compute, seed):
@@ -214,7 +211,7 @@ class SchedulerClients(cache_manager.CacheManagerBase):
         remote_obj.process_commit(context, commit, seed)
 
     def get_all_host_states(self):
-        return self.ready_states.values()
+        return self.active_remotes.values()
 
     def abort_claims(self, claims):
         for claim in claims:

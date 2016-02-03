@@ -73,19 +73,20 @@ class RemoteManagerBase(object):
 
     def standby(self):
         LOG.info(_LI("Remote %s is in standby mode!") % self.host)
-        self.state = self.STANDBY
         self._side_affects.clear()
         self._side_affects.add(self._TRANCIENT)
+        self.state = self.STANDBY
 
     def is_disabled(self):
         return self.state == self.DISABLED
 
     def disable(self):
         if self.state != self.DISABLED:
-            self._disable()
             self._side_affects.clear()
+            self.manager.active_remotes[self.host] = self
             self.state = self.DISABLED
             LOG.info(_LI("Remote %s is disabled!") % self.host)
+            self._disable()
         else:
             pass
 
@@ -110,6 +111,7 @@ class RemoteManagerBase(object):
         self._activate(item, seed)
         if self._FALLENOUT in self._side_affects:
             self._side_affects.remove(self._FALLENOUT)
+        self.manager.active_remotes[self.host] = self
         self.state = self.ACTIVE
         LOG.info(_LI("Remote %s is refreshed and activated!") % self.host)
 
@@ -127,6 +129,7 @@ class RemoteManagerBase(object):
         # TODO(Yingxin): change to timeout and disable
         if not self.is_activated():
             self.disable()
+            return
         try:
             self._side_affects.remove(self._TRANCIENT)
             LOG.info(_LI("Keep trancient remote %s") % self.host)
@@ -171,6 +174,7 @@ class CacheManagerBase(object):
         self.host = host
         self.api = self.API_PROXY(host)
         self.remotes = {}
+        self.active_remotes = {}
 
     def _do_periodical(self):
         pass
