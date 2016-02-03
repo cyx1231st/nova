@@ -22,6 +22,7 @@ import nova
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
 from nova import servicegroup
+from nova import utils
 
 LOG = logging.getLogger(__name__)
 
@@ -269,7 +270,7 @@ class MessageWindow(object):
 
     def try_reset(self, seed):
         if self.seed is not None and \
-                seed < self.seed and self.seed - seed < self.window_max:
+                seed < self.seed and self.seed - seed < self.capacity:
             LOG.warn(_LE("Reset failed, seed: %(new)s, %(old)s")
                      % {'new': seed, 'old': self.seed})
             return False
@@ -292,7 +293,7 @@ class MessageWindow(object):
         elif seed == self.seed + 1:
             self.seed = seed
         else: # seed > self.seed + 1
-            if seed - self.seed > self.window_max:
+            if seed - self.seed > self.capacity:
                 LOG.error(_LE("A gient gap between %(from)d and %(to)d, "
                     "refresh state!") % {'from': self.seed, 'to': seed})
                 self.reset()
@@ -304,9 +305,9 @@ class MessageWindow(object):
 
         if self.window:
             LOG.info(_LI("Missing commits: %s.") % self.window)
-            if self.seed - self.window[0] >= self.window_max:
+            if self.seed - self.window[0] >= self.capacity:
                 LOG.error(_LE("Lost exceed window capacity %d, abort!")
-                          % self.window_max)
+                          % self.capacity)
                 self.reset()
                 raise KeyError()
 
@@ -325,7 +326,7 @@ class MessagePipe(object):
     def _dispatch_msgs(self):
         while True:
             if not self.enabled:
-                LOG.error(_LE("MessagePipe is disable, cannot spawn!"))
+                LOG.error(_LE("MessagePipe is disabled, cannot spawn!"))
                 return
             msgs = []
             msgs.append(self.queue.get())
@@ -341,14 +342,16 @@ class MessagePipe(object):
         if self.thread:
             self.thread.kill()
         self.thread = utils.spawn(self._dispatch_msgs)
+        self.enabled = True
 
     def disable(self):
         self.queue = None
         if self.thread:
             self.thread.kill()
+        self.enabled = False
 
     def put(self, msg):
-        if self.queue is None:
+        if not self.enabled:
             LOG.error(_LE("MessagePipe is disabled, cannot put msg %s!")
                       % msg)
             return

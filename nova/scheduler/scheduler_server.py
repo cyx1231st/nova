@@ -24,7 +24,6 @@ from nova import objects
 from nova.scheduler import cache_manager
 from nova.scheduler import client as scheduler_client
 from nova import servicegroup
-from nova import utils
 
 LOG = logging.getLogger(__name__)
 
