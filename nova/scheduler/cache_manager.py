@@ -13,10 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from eventlet import queue
 from functools import partial
 
 from oslo_log import log as logging
 
+import nova
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
 from nova import servicegroup
@@ -166,6 +168,20 @@ class CacheManagerBase(object):
     def _do_periodical(self):
         pass
 
+    def _get_remote(self, host, label):
+        remote_obj = self.remotes.get(host, None)
+        if not remote_obj:
+            remote_obj = self.REMOTE_MANAGER(host, self.api, self)
+            self.remotes[host] = remote_obj
+            LOG.warn(_LW("Added new remote %(host)s labeled %(label)s"
+                     % {'host': host, 'label': label}))
+        return remote_obj
+
+    def notified_by_remote(self, context, remote_host):
+        LOG.info(_LI("Get notified by remote %s") % remote_host)
+        remote_obj = self._get_remote(remote_host, "notified")
+        remote_obj.refresh(context, force=True)
+
     def periodically_refresh_remotes(self, context):
         service_refs = {service.host: service
                         for service in objects.ServiceList.get_by_binary(
@@ -194,20 +210,6 @@ class CacheManagerBase(object):
             remote.sync(context, service_refs.get(remote.host, None))
 
         self._do_periodical()
-
-    def _get_remote(self, host, label):
-        remote_obj = self.remotes.get(host, None)
-        if not remote_obj:
-            remote_obj = self.REMOTE_MANAGER(host, self.api, self)
-            self.remotes[host] = remote_obj
-            LOG.warn(_LW("Added new remote %(host)s labeled %(label)s"
-                     % {'host': host, 'label': label}))
-        return remote_obj
-
-    def notified_by_remote(self, context, remote_host):
-        LOG.info(_LI("Get notified by remote %s") % remote_host)
-        remote_obj = self._get_remote(remote_host, "notified")
-        remote_obj.refresh(context, force=True)
 
 
 class ClaimRecords(object):
@@ -309,3 +311,45 @@ class MessageWindow(object):
                 raise KeyError()
 
         return True
+
+
+class MessagePipe(object):
+    def __init__(self, consume_callback, async_mode=True):
+        self.async_mode = async_mode
+        self.queue = None
+        self.thread = None
+        self.consume_callback = consume_callback
+        self.context = nova.context.get_admin_context()
+        self.enabled = False
+
+    def _dispatch_msgs(self):
+        while True:
+            if not self.enabled:
+                LOG.error(_LE("MessagePipe is disable, cannot spawn!"))
+                return
+            msgs = []
+            msgs.append(self.queue.get())
+            for i in range(self.queue.qsize(), 0, -1):
+                msgs.append(self.queue.get_nowait())
+            self.consume_callback(context = self.context,
+                                  messages = msgs):
+
+    def activate(self, initial_msg=None):
+        self.queue = queue.Queue()
+        if initial_msg is not None:
+            self.queue.put_nowait(initial_msg)
+        if self.thread:
+            self.thread.kill()
+        self.thread = utils.spawn(self._dispatch_msgs)
+
+    def disable(self):
+        self.queue = None
+        if self.thread:
+            self.thread.kill()
+
+    def put(self, msg):
+        if self.queue is None:
+            LOG.error(_LE("MessagePipe is disabled, cannot put msg %s!")
+                      % msg)
+            return
+        self.queue.put_nowait(msg)

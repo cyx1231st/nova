@@ -52,58 +52,6 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         # TODO(Yingxin): remove after implemented
         self.pci_stats = pci_stats.PciDeviceStats()
 
-    def __getattr__(self, name):
-        return getattr(self.host_state, name)
-
-    def consume_from_request(self, spec_obj):
-        if not self.is_activated():
-            raise RuntimeError("HostState %s is unavailable!" % self.host)
-        claim = self.host_state.claim(spec_obj, self.limits)
-        claim['seed'] = self.manager.seed
-        claim['from'] = self.manager.host
-        self.manager.seed += 1
-
-        self.host_state.process_claim(claim, True)
-        LOG.debug("Successfully consume from claim %(claim)s, "
-                  "the state is changed to %(state)s!",
-                  {'claim': claim, 'state': self})
-        spec_obj.numa_topology = claim['numa_topology']
-
-        self.claim_records.track(claim['seed'], claim)
-
-        return claim
-
-    def update_from_host_manager(self, context, aggregates, inst_dict):
-        if not self.is_activated():
-            raise RuntimeError("HostState %s is unavailable" % self.host)
-        self.aggregates = aggregates or []
-        self.instances = inst_dict or {}
-
-    def __repr__(self):
-        if not self.is_activated():
-            return ("HostState(%s, %s) is in state %s!"
-                    % self.host, self.nodename, self.state)
-        return ("HostState(%s, %s) total_usable_ram_mb:%s free_ram_mb:%s "
-                "total_usable_disk_gb:%s free_disk_mb:%s disk_mb_used:%s "
-                "vcpus_total:%s vcpus_used:%s "
-                "numa_topology:%s pci_stats:%s "
-                "num_io_ops:%s num_instances:%s" %
-                (self.host, self.nodename,
-                 self.total_usable_ram_mb, self.free_ram_mb,
-                 self.total_usable_disk_gb, self.free_disk_mb,
-                 self.disk_mb_used,
-                 self.vcpus_total, self.vcpus_used,
-                 self.numa_topology, self.pci_stats,
-                 self.num_io_ops, self.num_instances))
-
-    def _do_periodical(self):
-        self.claim_records.timeout()
-        LOG.info(_LI("Report cache %(host)s: %(state)s")
-                 % {'host': self.host, 'state': self})
-
-    def _refresh(self, context):
-        self.api.report_host_state(context, self.host)
-
     def _activate(self, cache, seed):
         if self.is_activated() and \
                 not self.message_window.try_reset(seed):
@@ -123,6 +71,14 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         self.host_state = None
         self.claim_records.reset()
         self.manager.ready_states.pop(self.host, None)
+
+    def _refresh(self, context):
+        self.api.report_host_state(context, self.host)
+
+    def _do_periodical(self):
+        self.claim_records.timeout()
+        LOG.info(_LI("Report cache %(host)s: %(state)s")
+                 % {'host': self.host, 'state': self})
 
     def process_commit(self, context, commit, seed):
         if isinstance(commit, objects.HostState):
@@ -194,6 +150,50 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                 LOG.debug("Updated state: %s" % self)
             else:
                 LOG.error(_LE("Claim %s not found, abort abort!") % claim)
+
+    def __getattr__(self, name):
+        return getattr(self.host_state, name)
+
+    def consume_from_request(self, spec_obj):
+        if not self.is_activated():
+            raise RuntimeError("HostState %s is unavailable!" % self.host)
+        claim = self.host_state.claim(spec_obj, self.limits)
+        claim['seed'] = self.manager.seed
+        claim['from'] = self.manager.host
+        self.manager.seed += 1
+
+        self.host_state.process_claim(claim, True)
+        LOG.debug("Successfully consume from claim %(claim)s, "
+                  "the state is changed to %(state)s!",
+                  {'claim': claim, 'state': self})
+        spec_obj.numa_topology = claim['numa_topology']
+
+        self.claim_records.track(claim['seed'], claim)
+
+        return claim
+
+    def update_from_host_manager(self, context, aggregates, inst_dict):
+        if not self.is_activated():
+            raise RuntimeError("HostState %s is unavailable" % self.host)
+        self.aggregates = aggregates or []
+        self.instances = inst_dict or {}
+
+    def __repr__(self):
+        if not self.is_activated():
+            return ("HostState(%s, %s) is in state %s!"
+                    % self.host, self.nodename, self.state)
+        return ("HostState(%s, %s) total_usable_ram_mb:%s free_ram_mb:%s "
+                "total_usable_disk_gb:%s free_disk_mb:%s disk_mb_used:%s "
+                "vcpus_total:%s vcpus_used:%s "
+                "numa_topology:%s pci_stats:%s "
+                "num_io_ops:%s num_instances:%s" %
+                (self.host, self.nodename,
+                 self.total_usable_ram_mb, self.free_ram_mb,
+                 self.total_usable_disk_gb, self.free_disk_mb,
+                 self.disk_mb_used,
+                 self.vcpus_total, self.vcpus_used,
+                 self.numa_topology, self.pci_stats,
+                 self.num_io_ops, self.num_instances))
 
 
 class SchedulerClients(cache_manager.CacheManagerBase):

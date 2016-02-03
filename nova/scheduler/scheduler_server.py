@@ -12,7 +12,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-from eventlet import queue
+
 import random
 
 from oslo_log import log as logging
@@ -46,70 +46,48 @@ class APIProxy(cache_manager.APIProxyBase):
 class SchedulerServer(cache_manager.RemoteManagerBase):
     def __init__(self, host, api, manager):
         super(SchedulerServer, self).__init__(host, api, manager)
-        self.queue = None
-        self.thread = None
+        self.message_pipe = cache_manager.MessagePipe(
+                self._dispatch_commits, True)
         self.seed = random.randint(0, 1000000)
         LOG.info(_LI("Seed %d") % self.seed)
 
-    def send_claim(self, context, claim, proceed):
-        self.expect_active(context)
-        claim['proceed'] = proceed
-        self.queue.put_nowait(claim)
-
-    def send_commit(self, context, commit):
-        self.expect_active(context)
-        self.queue.put_nowait(commit)
-
     def _activate(self, item, seed):
-        self.queue = queue.Queue()
-        self.queue.put_nowait("refresh")
-        if self.thread:
-            self.thread.kill()
-        self.thread = utils.spawn(
-            self._dispatch_commits, nova.context.get_admin_context())
+        self.message_pipe.activate("refresh")
+
+    def _disable(self):
+        self.message_pipe.disable()
 
     def _refresh(self, context):
         if self.manager.host_state:
             self.activate()
 
-    def _disable(self):
-        self.queue = None
+    def _dispatch_commits(self, context, messages):
+        if not self.manager.host_state:
+            LOG.error(_LE("Host state is not available, abort dispatching!"))
+            self.disable()
 
-        # NOTE(Yingxin): Kill must be executed at last, because _disable could
-        # be executed by self.thread
-        if self.thread:
-            self.thread.kill()
+        self.seed = self.seed + 1
+        if messages[0] == "refresh":
+            LOG.info(_LI("Scheduler %(host)s is refreshed by %(seed)d!")
+                     % {'host': self.host, 'seed': self.seed})
+            self.api.send_commit(context, self.manager.host_state,
+                                 self.host, self.seed)
+        else:
+            LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
+                         "%(commit)s")
+                     % {'scheduler': self.host,
+                        'commit': messages,
+                        'seed': self.seed})
+            # TODO(Yingxin): merge messages if possible
+            self.api.send_commit(context, messages, self.host, self.seed)
 
-    def _dispatch_commits(self, context):
-        while True:
-            if not self.manager.host_state:
-                LOG.error(_LE("No host_state available in %s, abort!")
-                          % self.host)
-                self.disable()
+    def send_claim(self, context, claim, proceed):
+        claim['proceed'] = proceed
+        self.send_commit(context, claim)
 
-            if not self.is_activated():
-                LOG.error(_LE("Remote %s not activated, abort!")
-                          % self.host)
-                self.disable()
-
-            jobs = []
-            jobs.append(self.queue.get())
-            for i in range(self.queue.qsize(), 0, -1):
-                jobs.append(self.queue.get_nowait())
-
-            self.seed = self.seed + 1
-            if jobs[0] == "refresh":
-                LOG.info(_LI("Scheduler %(host)s is refreshed by %(seed)d!")
-                         % {'host': self.host, 'seed': self.seed})
-                self.api.send_commit(context, self.manager.host_state,
-                                     self.host, self.seed)
-            else:
-                LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
-                             "%(commit)s")
-                         % {'scheduler': self.host,
-                            'commit': jobs,
-                            'seed': self.seed})
-                self.api.send_commit(context, jobs, self.host, self.seed)
+    def send_commit(self, context, commit):
+        self.expect_active(context)
+        self.message_pipe.put(commit)
 
 
 class SchedulerServers(cache_manager.CacheManagerBase):
@@ -123,21 +101,10 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         self.compute_state = None
         self.claim_records = cache_manager.ClaimRecords()
 
-    def claim(self, context, claim, limits):
-        try:
-            self.host_state.claim(claim, limits)
-        except exception.ComputeResourcesUnavailable as e:
-            self._fail_claim(context, claim)
-            raise e
-
-        self._success_claim(context, claim)
-
-    def _fail_claim(self, context, claim):
-        host = claim['from']
-        LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
-                 % {'scheduler': host, 'claim': claim})
-        remote_obj = self._get_remote(host, "claim_fail")
-        remote_obj.send_claim(context, claim, False)
+    def _do_periodical(self):
+        if self.host_state:
+            self.claim_records.timeout()
+            LOG.info(_LI("Report cache: %s") % self.host_state)
 
     def _success_claim(self, context, claim):
         host = claim['from']
@@ -147,6 +114,22 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         self.claim_records.track(claim['seed'], claim)
         for remote in self.remotes.values():
             remote.send_claim(context, claim, True)
+
+    def _fail_claim(self, context, claim):
+        host = claim['from']
+        LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
+                 % {'scheduler': host, 'claim': claim})
+        remote_obj = self._get_remote(host, "claim_fail")
+        remote_obj.send_claim(context, claim, False)
+
+    def claim(self, context, claim, limits):
+        try:
+            self.host_state.claim(claim, limits)
+        except exception.ComputeResourcesUnavailable as e:
+            self._fail_claim(context, claim)
+            raise e
+
+        self._success_claim(context, claim)
 
     def update_from_compute(self, context, compute, claim, proceed):
         if not self.host_state:
@@ -178,8 +161,3 @@ class SchedulerServers(cache_manager.CacheManagerBase):
                 self.host_state.process_commit(commit)
                 for remote in self.remotes.values():
                     remote.send_commit(context, commit)
-
-    def _do_periodical(self):
-        if self.host_state:
-            self.claim_records.timeout()
-            LOG.info(_LI("Report cache: %s") % self.host_state)
