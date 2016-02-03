@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from functools import partial
+
 from oslo_log import log as logging
 
 from nova.i18n import _LI, _LE, _LW
@@ -161,7 +163,7 @@ class CacheManagerBase(object):
         self.api = self.API_PROXY(host)
         self.remotes = {}
 
-    def _do_periodicals(self):
+    def _do_periodical(self):
         pass
 
     def periodically_refresh_remotes(self, context):
@@ -191,7 +193,7 @@ class CacheManagerBase(object):
         for remote in self.remotes.values():
             remote.sync(context, service_refs.get(remote.host, None))
 
-        self._do_periodicals()
+        self._do_periodical()
 
     def _get_remote(self, host, label):
         remote_obj = self.remotes.get(host, None)
@@ -206,3 +208,45 @@ class CacheManagerBase(object):
         LOG.info(_LI("Get notified by remote %s") % remote_host)
         remote_obj = self._get_remote(remote_host, "notified")
         remote_obj.refresh(context, force=True)
+
+
+class ClaimRecords(object):
+    def __init__(self):
+        self.claims = {}
+        self.old_claims = {}
+        self.abort_callback = None
+
+    def track(self, seed, claim):
+        if not self.abort_callback:
+            LOG.error(_LE("ClaimRecords is disabled!"))
+            return
+        self.claims[seed] = claim
+
+    def timeout(self):
+        if not self.abort_callback:
+            LOG.error(_LE("ClaimRecords is disabled!"))
+            return
+        timeout_claims = self.old_claims.values()
+        if timeout_claims:
+            LOG.warn(_LW("Time out claims %s") % timeout_claims)
+            for claim in timeout_claims:
+                self.abort_callback(claim)
+        self.old_claims = self.claims
+        self.claims = {}
+
+    def pop(self, seed):
+        if not self.abort_callback:
+            LOG.error(_LE("ClaimRecords is disabled!"))
+            return
+        claim = self.claims.pop(seed, None)
+        old_claim = self.old_claims.pop(seed, None)
+        return claim or old_claim
+
+    def reset(self, cache=None):
+        self.claims.clear()
+        self.old_claims.clear()
+        if cache:
+            self.abort_callback = \
+                    partial(cache.process_claim, proceed = False)
+        else:
+            self.abort_callback = None

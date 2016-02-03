@@ -45,8 +45,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
 
         self.seed = None
         self.window = None
-        self.claims = None
-        self.old_claims = None
+        self.claim_records = cache_manager.ClaimRecords()
 
         # host state specific
         self.host_state = None
@@ -74,8 +73,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                   {'claim': claim, 'state': self})
         spec_obj.numa_topology = claim['numa_topology']
 
-        # track claim
-        self.claims[claim['seed']] = claim
+        self.claim_records.track(claim['seed'], claim)
 
         return claim
 
@@ -103,33 +101,26 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                  self.num_io_ops, self.num_instances))
 
     def _do_periodical(self):
-        timeout_claims = self.old_claims.values()
-        if timeout_claims:
-            LOG.error(_LE("Time out claims %s") % timeout_claims)
-            self.abort_claims(timeout_claims)
-        self.old_claims = self.claims
-        self.claims = {}
+        self.claim_records.timeout()
         LOG.info(_LI("Report state %(host)s: %(state)s")
                  % {'host': self.host, 'state': self})
 
     def _refresh(self, context):
         self.api.report_host_state(context, self.host)
 
-    def _activate(self, item, seed):
-        self.host_state = item
+    def _activate(self, cache, seed):
+        self.host_state = cache
+        self.claim_records.reset(cache)
         self.seed = seed
         self.manager.ready_states[self.host] = self
         self.window = []
-        self.claims = {}
-        self.old_claims = {}
 
     def _disable(self):
         self.host_state = None
         self.seed = None
         self.window = None
         self.manager.ready_states.pop(self.host, None)
-        self.claims = None
-        self.old_claims = None
+        self.claim_records.reset()
 
     def process_commit(self, context, commit, seed):
         if isinstance(commit, objects.HostState):
@@ -189,34 +180,23 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                     self.host_state.process_claim(item, proceed)
                     LOG.debug("Updated state: %s" % self)
                 else:
-                    in_track = False
-                    if seed in self.claims:
-                        del self.claims[seed]
-                        in_track = True
-                    if seed in self.old_claims:
-                        del self.old_claims[seed]
-                        in_track = True
+                    tracked_claim = self.claim_records.pop(seed)
 
-                    if in_track and not proceed:
-                        LOG.info(_LI("failed_ %(instance)s to %(host)s") %
+                    if tracked_claim and not proceed:
+                        LOG.info(_LI("Failed_ %(instance)s to %(host)s") %
                                  {'instance': instance_uuid,
                                   'host': item['host']})
-                        self.host_state.process_claim(item, proceed)
-                        LOG.debug("Updated state: %s"
-                                  % self)
-                    elif in_track and proceed:
-                        LOG.info(_LI("succeed %(instance)s to %(host)s") %
+                        self.host_state.process_claim(item, False)
+                        LOG.debug("Updated state: %s" % self)
+                    elif tracked_claim and proceed:
+                        LOG.info(_LI("Succeed %(instance)s to %(host)s") %
                                  {'instance': instance_uuid,
                                   'host': item['host']})
-                    elif not in_track and not proceed:
-                        LOG.error(_LE("Outdated decision failure for "
-                                      "instance %s!") % instance_uuid)
                     else:
-                        LOG.error(_LE("Outdated decision success for "
-                                      "instance %s!") % instance_uuid)
-                        self.host_state.process_claim(item, proceed)
-                        LOG.debug("Updated state: %s"
-                                  % self)
+                        LOG.error(_LE("Outdated decision %(claim) "
+                                      "for instance %(id)s!") % 
+                                      {'claim': item,
+                                       'id': instance_uuid})
             else:
                 LOG.error(_LE("Unable to handle commit %s!") % item)
         if not success:
@@ -224,19 +204,12 @@ class SharedHostState(cache_manager.RemoteManagerBase):
 
     def abort_claims(self, claims):
         if not self.is_activated():
-            LOG.error(_LE("Attemp claims %(claims)s to inactive %(host)s")
+            LOG.error(_LE("Abort claims %(claims)s to inactive %(host)s")
                      % {'claims': claims, 'host': self.host})
             return
         for claim in claims:
-            do_abort = False
-            if claim['seed'] in self.claims:
-                del self.claims[claim['seed']]
-                do_abort = True
-            if claim['seed'] in self.old_claims:
-                del self.old_claims[claim['seed']]
-                do_abort = True
-
-            if do_abort:
+            tracked_claim = self.claim_records.pop(claim['seed'])
+            if tracked_claim:
                 LOG.info(_LI("Abort claim %s!") % claim)
                 self.host_state.process_claim(claim, False)
                 LOG.debug("Updated state: %s" % self)

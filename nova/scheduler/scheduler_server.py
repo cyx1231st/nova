@@ -119,8 +119,7 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         super(SchedulerServers, self).__init__(host)
         self.host_state = None
         self.compute_state = None
-        self.claims = {}
-        self.old_claims = {}
+        self.claim_records = cache_manager.ClaimRecords()
 
     def claim(self, context, claim, limits):
         try:
@@ -143,7 +142,7 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         LOG.info(_LI("Success scheduler %(scheduler)s claim: %(claim)s!")
                  % {'scheduler': host, 'claim': claim})
         self.host_state.process_claim(claim, True)
-        self.claims[claim['seed']] = claim
+        self.claim_records.track(claim['seed'], claim)
         for remote in self.remotes.values():
             remote.send_claim(context, claim, True)
 
@@ -151,24 +150,21 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         if not self.host_state:
             self.host_state = objects.HostState.from_primitives(
                     context, compute)
+            self.claim_records.reset(self.host_state)
             self.compute_state = self.host_state.obj_clone()
             self.api.notify_schedulers(context)
             LOG.info(_LI("Compute %s is up!") % self.host)
         else:
             if claim:
-                do_proceed = False
-                if claim['seed'] in self.claims:
-                    del self.claims[claim['seed']]
-                    do_proceed = True
-                if claim['seed'] in self.old_claims:
-                    del self.claims[claim['seed']]
-                    do_proceed = True
-                if do_proceed:
+                tracked_claim = self.claim_records.pop(claim['seed'])
+                if tracked_claim:
                     if proceed:
-                        self.compute_state.process_claim(claim, True)
-                        LOG.info(_LI("Compute claim success: %s") % claim)
+                        LOG.info(_LI("Compute claim success: %s")
+                                 % tracked_claim)
+                        self.compute_state.process_claim(tracked_claim, True)
                     else:
-                        LOG.info(_LI("Compute claim failed: %s") % claim)
+                        LOG.info(_LI("Compute claim failed: %s")
+                                 % tracked_claim)
                 else:
                     LOG.error(_LE("Unrecognized compute claim: %s") % claim)
 
@@ -181,12 +177,6 @@ class SchedulerServers(cache_manager.CacheManagerBase):
                 for remote in self.remotes.values():
                     remote.send_commit(context, commit)
 
-    def _do_periodicals(self):
+    def _do_periodical(self):
         if self.host_state:
-            timeout_claims = self.old_claims.values()
-            if timeout_claims:
-                LOG.error(_LE("Abort timeout claims %s") % timeout_claims)
-                for claim in timeout_claims:
-                    self.host_state.process_claim(claim, False)
-            self.old_claims = self.claims
-            self.claims = {}
+            self.claim_records.timeout()
