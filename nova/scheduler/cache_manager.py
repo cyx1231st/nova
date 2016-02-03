@@ -332,7 +332,7 @@ class MessagePipe(object):
             for i in range(self.queue.qsize(), 0, -1):
                 msgs.append(self.queue.get_nowait())
             self.consume_callback(context = self.context,
-                                  messages = msgs):
+                                  messages = msgs)
 
     def activate(self, initial_msg=None):
         self.queue = queue.Queue()
