@@ -60,14 +60,14 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
         self.expect_active(context)
         self.queue.put_nowait(commit)
 
-    def _activate(self):
+    def _activate(self, item, seed):
         self.queue = queue.Queue()
         self.queue.put_nowait("refresh")
         if not self.thread:
             self.thread = utils.spawn(
                 self._dispatch_commits, nova.context.get_admin_context())
 
-    def _refresh(self):
+    def _refresh(self, context):
         if self.manager.host_state:
             self.activate()
 

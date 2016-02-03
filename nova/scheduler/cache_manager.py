@@ -51,13 +51,16 @@ class RemoteManagerBase(object):
         self.standby()
 
     def _disable(self):
-        pass
+        raise NotImplementedError(
+                "RemoteManagerBase._disable not implemented!")
 
     def _activate(self, item, seed):
-        pass
+        raise NotImplementedError(
+                "RemoteManagerBase._activate not implemented!")
 
     def _refresh(self, context):
-        pass
+        raise NotImplementedError(
+                "RemoteManagerBase._refresh not implemented!")
 
     def _do_periodical(self):
         pass
@@ -97,6 +100,7 @@ class RemoteManagerBase(object):
         if self._FALLENOUT in self._side_affects:
             self._side_affects.remove(self._FALLENOUT)
         self.state = self.ACTIVE
+        # TODO(Yingxin): remove extra arguments
         self._activate(item, seed)
 
     def refresh(self, context):
