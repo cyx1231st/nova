@@ -103,8 +103,8 @@ class RemoteManagerBase(object):
         # TODO(Yingxin): remove extra arguments
         self._activate(item, seed)
 
-    def refresh(self, context):
-        if self._FALLENOUT not in self._side_affects:
+    def refresh(self, context, force=False):
+        if force or self._FALLENOUT not in self._side_affects:
             if self.is_disabled():
                 self.standby()
             else:
@@ -205,4 +205,4 @@ class CacheManagerBase(object):
     def notified_by_remote(self, context, remote_host):
         LOG.info(_LI("Get notified by remote %s") % remote_host)
         remote_obj = self._get_remote(remote_host, "notified")
-        remote_obj.refresh(context)
+        remote_obj.refresh(context, force=True)
