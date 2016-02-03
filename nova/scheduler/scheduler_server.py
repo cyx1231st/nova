@@ -74,9 +74,11 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
 
     def _disable(self):
         self.queue = None
+
+        # NOTE(Yingxin): Kill must be executed at last, because _disable could
+        # be executed by self.thread
         if self.thread:
             self.thread.kill()
-            self.thread = None
 
     def _dispatch_commits(self, context):
         while True:
@@ -180,3 +182,4 @@ class SchedulerServers(cache_manager.CacheManagerBase):
     def _do_periodical(self):
         if self.host_state:
             self.claim_records.timeout()
+            LOG.info(_LI("Report cache: %s") % self.host_state)

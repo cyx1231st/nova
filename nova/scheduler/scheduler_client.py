@@ -102,7 +102,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
 
     def _do_periodical(self):
         self.claim_records.timeout()
-        LOG.info(_LI("Report state %(host)s: %(state)s")
+        LOG.info(_LI("Report cache %(host)s: %(state)s")
                  % {'host': self.host, 'state': self})
 
     def _refresh(self, context):
