@@ -56,7 +56,7 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
         claim['proceed'] = proceed
         self.queue.put_nowait(claim)
 
-    def send_commit(self, context, commit)
+    def send_commit(self, context, commit):
         self.expect_active(context)
         self.queue.put_nowait(commit)
 

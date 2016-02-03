@@ -63,6 +63,7 @@ class RemoteManagerBase(object):
         pass
 
     def standby(self):
+        LOG.info(_LI("Remote %s is in standby mode!") % self.host)
         self.state = self.STANDBY
         self._side_affects.clear()
         self._side_affects.add(self._TRANCIENT)
@@ -72,7 +73,7 @@ class RemoteManagerBase(object):
 
     def disable(self):
         if self.state != self.DISABLED:
-            LOG.info(_LI("Disable remote %s.") % self.host)
+            LOG.info(_LI("Remote %s is disabled!") % self.host)
             self.state = self.DISABLED
             self._side_affects.clear()
             self._disable()
@@ -92,7 +93,7 @@ class RemoteManagerBase(object):
             return True
 
     def activate(self, item=None, seed=None):
-        LOG.info(_LE("Remote %s is refreshed and activated!") % self.host)
+        LOG.info(_LI("Remote %s is refreshed and activated!") % self.host)
         if self._FALLENOUT in self._side_affects:
             self._side_affects.remove(self._FALLENOUT)
         self.state = self.ACTIVE
@@ -109,6 +110,7 @@ class RemoteManagerBase(object):
             self._refresh(context)
 
     def _handle_trancient(self):
+        # TODO(Yingxin): change to timeout and disable
         if self.is_disabled():
             return
         try:
@@ -123,15 +125,15 @@ class RemoteManagerBase(object):
             LOG.info(_LI("Remote %s has no service record!") % self.host)
             self._handle_trancient()
         elif service['disabled']:
-            LOG.info(_LI("Remote %s is disabled!") % self.host)
+            LOG.info(_LI("Remote %s service is disabled!") % self.host)
             self.disable()
         elif self.api.service_is_up(service):
+            if self._TRANCIENT in self._side_affects:
+                self._side_affects.remove(self._TRANCIENT)
             if not self.is_activated():
-                LOG.info(_LI("Remote %s is up!") % self.host)
+                LOG.info(_LI("Remote %s service is up!") % self.host)
                 self.refresh(context)
             else:
-                if self._TRANCIENT in self._side_affects:
-                    self._side_affects.remove(self._TRANCIENT)
                 if self._FALLENOUT in self._side_affects:
                     LOG.error(_LE("Remote %s is still not ready, "
                                   "refresh again!") % self.host)
@@ -140,7 +142,7 @@ class RemoteManagerBase(object):
                 self._do_periodical()
         else:
             if not self.is_disabled():
-                LOG.info(_LI("Remote %s heartbeat timeout!") % self.host)
+                LOG.info(_LI("Remote %s service heartbeat timeout!") % self.host)
                 self._handle_trancient()
 
 
@@ -168,10 +170,10 @@ class CacheManagerBase(object):
         old_keys = service_keys_cache - service_keys_db
 
         for new_key in new_keys:
+            LOG.info(_LI("Add new remote %s from db.") % new_key)
             remote_obj = self.REMOTE_MANAGER(service_refs[new_key].host,
                                              self.api, self)
             self.remotes[new_key] = remote_obj
-            LOG.info(_LI("Added new remote %s from db.") % new_key)
 
         for old_key in old_keys:
             remote_obj = self.remotes[old_key]
