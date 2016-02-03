@@ -83,7 +83,7 @@ class RemoteManagerBase(object):
     def disable(self):
         if self.state != self.DISABLED:
             self._side_affects.clear()
-            self.manager.active_remotes[self.host] = self
+            self.manager.active_remotes.pop(self.host, None)
             self.state = self.DISABLED
             LOG.info(_LI("Remote %s is disabled!") % self.host)
             self._disable()
