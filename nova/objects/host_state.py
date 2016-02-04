@@ -223,3 +223,17 @@ class HostState(base.NovaObject):
             self.num_io_ops -= claim['num_io_ops']
             self.numa_topology = hardware.get_host_numa_usage_from_instance(
                     self, claim['numa_topology'], True)
+
+    def __repr__(self):
+        return ("HostState(%s, %s) total_usable_ram_mb:%s free_ram_mb:%s "
+                "total_usable_disk_gb:%s free_disk_mb:%s disk_mb_used:%s "
+                "vcpus_total:%s vcpus_used:%s "
+                "numa_topology:%s pci_stats:%s "
+                "num_io_ops:%s num_instances:%s" %
+                (self.host, self.hypervisor_hostname,
+                 self.total_usable_ram_mb, self.free_ram_mb,
+                 self.total_usable_disk_gb, self.free_disk_mb,
+                 self.disk_mb_used,
+                 self.vcpus_total, self.vcpus_used,
+                 self.numa_topology, self.pci_stats,
+                 self.num_io_ops, self.num_instances))

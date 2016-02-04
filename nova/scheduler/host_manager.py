@@ -272,6 +272,36 @@ class HostState(object):
                  self.num_io_ops, self.num_instances))
 
 
+class SharedHostState(HostState):
+    def __init__(self, remote_manager, aggregates, inst_dict):
+        if not remote_manager.is_activated():
+            raise RuntimeError("Manager %s is assumed active in "
+                               "SharedHostState.__init__()!"
+                               % remote_manager.host)
+        self. _manager = remote_manager
+
+        self.host_state = remote_manager.host_state
+        self.aggregates = aggregates or []
+        self.instances = inst_dict or {}
+        self.limits = {}
+
+        # TODO(Yingxin): Remove after implemented
+        self.pci_stats = pci_stats.PciDeviceStats()
+        # TODO(Yingxin): Doesn't support nodename yet
+        self.nodename = self.host
+
+    # NOTE(Yingxin): Do not implement __setattr__ to make self.host_state
+    # readonly by filters and weighers
+    def __getattr__(self, name):
+        return getattr(self.host_state, name)
+
+    def consume_from_request(self, spec_obj):
+        return self._manager.consume_cache(spec_obj, self.limits)
+
+    def __repr__(self):
+        return self.host_state.__repr__()
+
+
 class HostManager(object):
     """Base HostManager class."""
 
@@ -505,15 +535,14 @@ class HostManager(object):
         in HostState are pre-populated and adjusted based on data in the db.
         """
 
-        states = self.cache_manager.get_all_host_states()
-        for state in states:
-            state.update_from_host_manager(
-                                       context,
-                                       self._get_aggregates_info(state.host),
+        managers = self.cache_manager.get_active_managers()
+        host_states = [SharedHostState(manager,
+                                       self._get_aggregates_info(manager.host),
                                        self._get_instance_info(
                                            context,
-                                           state.hypervisor_hostname))
-        return states
+                                           manager.host)) \
+                       for manager in managers]
+        return host_states
 
     def _get_aggregates_info(self, host):
         return [self.aggs_by_id[agg_id] for agg_id in

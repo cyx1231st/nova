@@ -45,9 +45,8 @@ class RemoteManagerBase(object):
     _TRANCIENT = "TRANCIENT"
     _FALLENOUT = "FALLENOUT"
 
-    def __init__(self, host, api, manager, nodename=None):
+    def __init__(self, host, api, manager):
         self.host = host
-        self.nodename = host
         self.state = None
 
         self.api = api
@@ -221,6 +220,9 @@ class CacheManagerBase(object):
             remote.sync(context, service_refs.get(remote.host, None))
 
         self._do_periodical()
+
+    def get_active_managers(self):
+        return self.active_remotes.values()
 
 
 class ClaimRecords(object):

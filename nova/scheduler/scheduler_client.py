@@ -18,9 +18,9 @@ import random
 from oslo_log import log as logging
 
 from nova.compute import rpcapi as compute_rpcapi
+from nova import exception
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
-from nova.pci import stats as pci_stats
 from nova.scheduler import cache_manager
 
 LOG = logging.getLogger(__name__)
@@ -44,15 +44,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         self.claim_records = cache_manager.ClaimRecords(
                 label=self.host)
         self.seed = random.randint(0, 1000000)
-
-        # host state specific
         self.host_state = None
-        self.aggregates = []
-        self.instances = {}
-        self.limits = {}
-
-        # TODO(Yingxin): remove after implemented
-        self.pci_stats = pci_stats.PciDeviceStats()
 
     def _activate(self, cache, seed):
         if self.is_activated() and \
@@ -151,49 +143,31 @@ class SharedHostState(cache_manager.RemoteManagerBase):
             else:
                 LOG.error(_LE("Claim %s not found, abort abort!") % claim)
 
-    def __getattr__(self, name):
-        return getattr(self.host_state, name)
-
-    def consume_from_request(self, spec_obj):
+    def consume_cache(self, spec_obj, limits):
         if not self.is_activated():
-            raise RuntimeError("HostState %s is unavailable!" % self.host)
-        claim = self.host_state.claim(spec_obj, self.limits)
+            raise exception.ComputeResourcesUnavailable(reason=
+                    "Remote %s is not available!" % self.host)
+        claim = self.host_state.claim(spec_obj, limits)
+
         claim['seed'] = self.seed
         claim['from'] = self.manager.host
         self.seed += 1
 
         self.host_state.process_claim(claim, True)
+        spec_obj.numa_topology = claim['numa_topology']
+        self.claim_records.track(claim['seed'], claim)
         LOG.debug("Successfully consume from claim %(claim)s, "
                   "the state is changed to %(state)s!",
-                  {'claim': claim, 'state': self})
-        spec_obj.numa_topology = claim['numa_topology']
-
-        self.claim_records.track(claim['seed'], claim)
+                  {'claim': claim, 'state': self.host_state})
 
         return claim
 
-    def update_from_host_manager(self, context, aggregates, inst_dict):
-        if not self.is_activated():
-            raise RuntimeError("HostState %s is unavailable" % self.host)
-        self.aggregates = aggregates or []
-        self.instances = inst_dict or {}
-
     def __repr__(self):
         if not self.is_activated():
-            return ("HostState(%s, %s) is in state %s!"
-                    % self.host, self.nodename, self.state)
-        return ("HostState(%s, %s) total_usable_ram_mb:%s free_ram_mb:%s "
-                "total_usable_disk_gb:%s free_disk_mb:%s disk_mb_used:%s "
-                "vcpus_total:%s vcpus_used:%s "
-                "numa_topology:%s pci_stats:%s "
-                "num_io_ops:%s num_instances:%s" %
-                (self.host, self.nodename,
-                 self.total_usable_ram_mb, self.free_ram_mb,
-                 self.total_usable_disk_gb, self.free_disk_mb,
-                 self.disk_mb_used,
-                 self.vcpus_total, self.vcpus_used,
-                 self.numa_topology, self.pci_stats,
-                 self.num_io_ops, self.num_instances))
+            return ("HostState(%s) is in state %s!"
+                    % self.host, self.state)
+        else:
+            return self.host_state.__repr__()
 
 
 class SchedulerClients(cache_manager.CacheManagerBase):
@@ -210,11 +184,7 @@ class SchedulerClients(cache_manager.CacheManagerBase):
         remote_obj = self._get_remote(compute, "commits")
         remote_obj.process_commit(context, commit, seed)
 
-    def get_all_host_states(self):
-        return self.active_remotes.values()
-
     def abort_claims(self, claims):
         for claim in claims:
-            host = claim['host']
-            remote_obj = self._get_remote(host, "abort")
+            remote_obj = self._get_remote(claim['host'], "abort")
             remote_obj.abort_claims([claim])
