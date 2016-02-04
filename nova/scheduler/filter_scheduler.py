@@ -93,7 +93,7 @@ class FilterScheduler(driver.Scheduler):
         LOG.debug("Claims: %s" % claims)
         LOG.info(_LI("attempt %(instance)s to %(host)s")
                  % {'instance': spec_obj.instance_uuid,
-                    'host': claims[0]['host']})
+                    'host': claims[0].target_host})
         return dests, claims
 
     def _get_configuration_options(self):

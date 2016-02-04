@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from functools import partial
 import random
 
 from oslo_log import log as logging
@@ -56,7 +57,8 @@ class SharedHostState(cache_manager.RemoteManagerBase):
             return
         self.message_window.reset(seed)
         self.host_state = cache
-        self.claim_records.reset(cache)
+        self.claim_records.reset(
+                partial(cache.process_claim, apply_claim=False))
 
     def _disable(self):
         self.message_window.reset()

@@ -259,14 +259,10 @@ class ClaimRecords(object):
         old_claim = self.old_claims.pop(seed, None)
         return claim or old_claim
 
-    def reset(self, cache=None):
+    def reset(self, abort_callback=None):
         self.claims.clear()
         self.old_claims.clear()
-        if cache:
-            self.abort_callback = \
-                    partial(cache.process_claim, proceed = False)
-        else:
-            self.abort_callback = None
+        self.abort_callback = abort_callback
 
 
 class MessageWindow(object):

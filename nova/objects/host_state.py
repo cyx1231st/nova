@@ -16,7 +16,6 @@ import random
 from nova import objects
 from nova.objects import base
 from nova.objects import fields
-from nova.scheduler import claims
 from nova.virt import hardware
 # from nova.pci import stats as pci_stats
 
