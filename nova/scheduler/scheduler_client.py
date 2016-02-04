@@ -22,6 +22,7 @@ from nova import exception
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
 from nova.scheduler import cache_manager
+from nova.scheduler import claims
 
 LOG = logging.getLogger(__name__)
 
@@ -89,41 +90,40 @@ class SharedHostState(cache_manager.RemoteManagerBase):
 
         success = True
         for item in commit:
-            if 'version_expected' in item:
+            if isinstance(item, objects.CacheClaim):
+                claim = item
+                proceed = claim.proceed
+                if claim.origin_host != self.manager.host:
+                    LOG.info(_LI("receive %(instance)s to %(host)s from "
+                                 "%(scheduler)s") %
+                             {'instance': claim.instance_uuid,
+                              'host': claim.target_host,
+                              'scheduler': claim.origin_host})
+                    self.host_state.process_claim(claim, proceed)
+                    LOG.debug("Updated state: %s" % self.host_state)
+                else:
+                    tracked_claim = self.claim_records.pop(claim.seed)
+
+                    if tracked_claim and not proceed:
+                        LOG.info(_LI("Failed_ %(instance)s to %(host)s") %
+                                 {'instance': tracked_claim.instance_uuid,
+                                  'host': tracked_claim.target_host})
+                        self.host_state.process_claim(tracked_claim, False)
+                        LOG.debug("Updated state: %s" % self.host_state)
+                    elif tracked_claim and proceed:
+                        LOG.info(_LI("Succeed %(instance)s to %(host)s") %
+                                 {'instance': tracked_claim.instance_uuid,
+                                  'host': tracked_claim.target_host})
+                    else:
+                        LOG.error(_LE("Unrecognized remote claim %(claim) "
+                                      "for instance %(id)s!") %
+                                      {'claim': claim,
+                                       'id': claim.instance_uuid})
+            elif 'version_expected' in item:
                 success = self.host_state.process_commit(item)
                 LOG.info(_LI("process commit from %(host)s: %(commit)s") %
                          {'host': self.host, 'commit': item})
                 LOG.debug("Updated state: %s" % self)
-            elif 'instance_uuid' in item:
-                seed = item['seed']
-                instance_uuid = item['instance_uuid']
-                proceed = item.pop('proceed', True)
-                if item['from'] != self.manager.host:
-                    LOG.info(_LI("receive %(instance)s to %(host)s from "
-                                 "%(scheduler)s") %
-                             {'instance': instance_uuid,
-                              'host': item['host'],
-                              'scheduler': item['from']})
-                    self.host_state.process_claim(item, proceed)
-                    LOG.debug("Updated state: %s" % self)
-                else:
-                    tracked_claim = self.claim_records.pop(seed)
-
-                    if tracked_claim and not proceed:
-                        LOG.info(_LI("Failed_ %(instance)s to %(host)s") %
-                                 {'instance': instance_uuid,
-                                  'host': item['host']})
-                        self.host_state.process_claim(item, False)
-                        LOG.debug("Updated state: %s" % self)
-                    elif tracked_claim and proceed:
-                        LOG.info(_LI("Succeed %(instance)s to %(host)s") %
-                                 {'instance': instance_uuid,
-                                  'host': item['host']})
-                    else:
-                        LOG.error(_LE("Outdated decision %(claim) "
-                                      "for instance %(id)s!") % 
-                                      {'claim': item,
-                                       'id': instance_uuid})
             else:
                 LOG.error(_LE("Unable to handle commit %s!") % item)
         if not success:
@@ -135,7 +135,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                      % {'claims': claims, 'host': self.host})
             return
         for claim in claims:
-            tracked_claim = self.claim_records.pop(claim['seed'])
+            tracked_claim = self.claim_records.pop(claim.seed)
             if tracked_claim:
                 LOG.info(_LI("Abort claim %s!") % claim)
                 self.host_state.process_claim(claim, False)
@@ -147,20 +147,20 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         if not self.is_activated():
             raise exception.ComputeResourcesUnavailable(reason=
                     "Remote %s is not available!" % self.host)
-        claim = self.host_state.claim(spec_obj, limits)
+        claim = claims.Claim(spec_obj, self.host_state, limits)
 
-        claim['seed'] = self.seed
-        claim['from'] = self.manager.host
+        cache_claim = objects.CacheClaim.from_primitives(
+                self.seed, self.manager.host, self.host,
+                spec_obj.instance_uuid, claim)
         self.seed += 1
-
-        self.host_state.process_claim(claim, True)
-        spec_obj.numa_topology = claim['numa_topology']
-        self.claim_records.track(claim['seed'], claim)
+        self.host_state.process_claim(cache_claim, True)
+        spec_obj.numa_topology = cache_claim.numa_topology
+        self.claim_records.track(cache_claim)
         LOG.debug("Successfully consume from claim %(claim)s, "
                   "the state is changed to %(state)s!",
-                  {'claim': claim, 'state': self.host_state})
+                  {'claim': cache_claim, 'state': self.host_state})
 
-        return claim
+        return cache_claim
 
     def __repr__(self):
         if not self.is_activated():
@@ -186,5 +186,5 @@ class SchedulerClients(cache_manager.CacheManagerBase):
 
     def abort_claims(self, claims):
         for claim in claims:
-            remote_obj = self._get_remote(claim['host'], "abort")
+            remote_obj = self._get_remote(claim.target_host, "abort")
             remote_obj.abort_claims([claim])

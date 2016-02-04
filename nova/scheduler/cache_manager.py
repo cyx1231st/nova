@@ -232,11 +232,11 @@ class ClaimRecords(object):
         self.abort_callback = None
         self.label = label
 
-    def track(self, seed, claim):
+    def track(self, claim):
         if not self.abort_callback:
             LOG.error(_LE("ClaimRecords %s is disabled!") % self.label)
             return
-        self.claims[seed] = claim
+        self.claims[claim.seed] = claim
 
     def timeout(self):
         if not self.abort_callback:

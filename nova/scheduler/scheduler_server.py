@@ -21,6 +21,7 @@ from nova import exception
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
 from nova.scheduler import cache_manager
+from nova.scheduler import claims
 from nova.scheduler import client as scheduler_client
 
 LOG = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
             self.api.send_commit(context, messages, self.host, self.seed)
 
     def send_claim(self, context, claim, proceed):
-        claim['proceed'] = proceed
+        claim.proceed = proceed
         self.send_commit(context, claim)
 
     def send_commit(self, context, commit):
@@ -106,21 +107,25 @@ class SchedulerServers(cache_manager.CacheManagerBase):
             LOG.info(_LI("Report cache: %s") % self.host_state)
 
     def claim(self, context, claim, limits):
-        remote_obj = self._get_remote(claim['from'], "claim")
+        if not self.host_state:
+            LOG.warn(_LW("Host state is not ready, ignored claim: %s")
+                     % claim)
+            return
+        remote_obj = self._get_remote(claim.origin_host, "claim")
         remote_obj.expect_active(context)
 
         try:
-            self.host_state.claim(claim, limits)
+            claims.Claim(claim, self.host_state, limits)
         except exception.ComputeResourcesUnavailable as e:
             LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
-                     % {'scheduler': claim['from'], 'claim': claim})
+                     % {'scheduler': claim.origin_host, 'claim': claim})
             remote_obj.send_claim(context, claim, False)
             raise e
 
         LOG.info(_LI("Success scheduler %(scheduler)s claim: %(claim)s!")
-                 % {'scheduler': claim['from'], 'claim': claim})
+                 % {'scheduler': claim.origin_host, 'claim': claim})
         self.host_state.process_claim(claim, True)
-        self.claim_records.track(claim['seed'], claim)
+        self.claim_records.track(claim)
         for remote in self.get_active_managers():
             remote.send_claim(context, claim, True)
 
@@ -134,7 +139,7 @@ class SchedulerServers(cache_manager.CacheManagerBase):
             LOG.info(_LI("Compute %s is up!") % self.host)
         else:
             if claim:
-                tracked_claim = self.claim_records.pop(claim['seed'])
+                tracked_claim = self.claim_records.pop(claim.seed)
                 if tracked_claim:
                     if proceed:
                         LOG.info(_LI("Compute claim success: %s")

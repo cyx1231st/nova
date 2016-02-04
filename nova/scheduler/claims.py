@@ -23,6 +23,7 @@ from nova.compute import claims
 from nova import exception
 from nova.i18n import _
 from nova.i18n import _LI
+from nova import objects
 from nova.virt import hardware
 
 
@@ -49,36 +50,36 @@ class Claim(claims.Claim):
 
     @property
     def disk_gb(self):
-        if isinstance(self.spec_obj, dict):
-            return self.spec_obj['disk_mb_used'] / 1024
+        if isinstance(self.spec_obj, objects.CacheClaim):
+            return self.spec_obj.disk_mb_used / 1024
         else:
             return self.spec_obj.root_gb + self.spec_obj.ephemeral_gb
 
     @property
     def memory_mb(self):
-        if isinstance(self.spec_obj, dict):
-            return - self.spec_obj['free_ram_mb']
+        if isinstance(self.spec_obj, objects.CacheClaim):
+            return - self.spec_obj.free_ram_mb
         else:
             return self.spec_obj.memory_mb
 
     @property
     def vcpus(self):
-        if isinstance(self.spec_obj, dict):
-            return self.spec_obj['vcpus_used']
+        if isinstance(self.spec_obj, objects.CacheClaim):
+            return self.spec_obj.vcpus_used
         else:
             return self.spec_obj.vcpus
 
     @property
     def numa_topology(self):
-        if isinstance(self.spec_obj, dict):
-            return self.spec_obj['numa_topology']
+        if isinstance(self.spec_obj, objects.CacheClaim):
+            return self.spec_obj.numa_topology
         else:
             return self.spec_obj.numa_topology
 
     @property
     def pci_requests(self):
-        if isinstance(self.spec_obj, dict):
-            return self.spec_obj['pci_requests']
+        if isinstance(self.spec_obj, objects.CacheClaim):
+            return self.spec_obj.pci_requests
         else:
             pci_requests = self.spec_obj.pci_requests
             if pci_requests and self.host_state.pci_stats:
@@ -221,22 +222,3 @@ class Claim(claims.Claim):
                       '%(unit)s < requested %(requested)d %(unit)s') %
                       {'type': type_, 'free': free, 'unit': unit,
                        'requested': requested})
-
-    def to_dict(self):
-        if isinstance(self.spec_obj, dict):
-            self.spec_obj
-        else:
-            ret = {}
-            ret['free_ram_mb'] = - self.memory_mb
-            ret['disk_mb_used'] = self.disk_gb * 1024
-            ret['vcpus_used'] = self.vcpus
-            ret['num_instances'] = 1
-            ret['num_io_ops'] = 1
-            ret['pci_requests'] = self.pci_requests
-            ret['numa_topology'] = self.numa_topology
-
-            ret['instance_uuid'] = self.spec_obj.instance_uuid
-            # ret['node'] = self.host_state.nodename
-            ret['host'] = self.host_state.host
-
-            return ret

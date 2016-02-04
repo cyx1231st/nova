@@ -197,32 +197,31 @@ class HostState(base.NovaObject):
 
         return result
 
-    def claim(self, req, limits):
-        claim = claims.Claim(req, self, limits)
-        return claim.to_dict()
+    def _process_automatic_fields(self, automatic_fields, change, sign):
+        if sign:
+            for field in automatic_fields:
+                setattr(self, field,
+                        getattr(self, field) + getattr(change, field))
+        else:
+            for field in automatic_fields:
+                setattr(self, field,
+                        getattr(self, field) - getattr(change, field))
 
     def process_claim(self, claim, apply_claim):
-        # TODO() apply pci_requests and cells to pci_stats
+        self._process_automatic_fields(objects.CacheClaim.automatic_fields,
+                                       claim, apply_claim)
+
+        # TODO(Yingxin): FORCE apply numa topology
+        if claim.numa_topology is not None:
+            self.numa_topology = hardware.get_host_numa_usage_from_instance(
+                    self, claim.numa_topology, not apply_claim)
+
+        # TODO(Yingxin) FORCE apply pci_requests and cells to pci_stats like:
         # if claim['pci_requests']:
         #     self.pci_stats.apply_requests(claim['pci_requests'],
         #                                   claim['numa_topology'].cells)
-
-        if apply_claim:
-            self.free_ram_mb += claim['free_ram_mb']
-            self.disk_mb_used += claim['disk_mb_used']
-            self.vcpus_used += claim['vcpus_used']
-            self.num_instances += claim['num_instances']
-            self.num_io_ops += claim['num_io_ops']
-            self.numa_topology = hardware.get_host_numa_usage_from_instance(
-                    self, claim['numa_topology'])
-        else:
-            self.free_ram_mb -= claim['free_ram_mb']
-            self.disk_mb_used -= claim['disk_mb_used']
-            self.vcpus_used -= claim['vcpus_used']
-            self.num_instances -= claim['num_instances']
-            self.num_io_ops -= claim['num_io_ops']
-            self.numa_topology = hardware.get_host_numa_usage_from_instance(
-                    self, claim['numa_topology'], True)
+        if claim.pci_requests is not None:
+            pass
 
     def __repr__(self):
         return ("HostState(%s, %s) total_usable_ram_mb:%s free_ram_mb:%s "
@@ -237,3 +236,62 @@ class HostState(base.NovaObject):
                  self.vcpus_total, self.vcpus_used,
                  self.numa_topology, self.pci_stats,
                  self.num_io_ops, self.num_instances))
+
+
+@base.NovaObjectRegistry.register
+class CacheClaim(base.NovaObject):
+    # Version 1.0: Initial version
+    VERSION = '1.0'
+
+    fields = {
+        'seed': fields.IntegerField(nullable=False),
+        'origin_host': fields.StringField(nullable=False),
+        'target_host': fields.StringField(nullable=False),
+        'instance_uuid': fields.UUIDField(nullable=False),
+        'proceed': fields.BooleanField(nullable=False),
+
+        'free_ram_mb': fields.IntegerField(nullable=False),
+        'disk_mb_used': fields.IntegerField(nullable=False),
+        'vcpus_used': fields.IntegerField(nullable=False),
+        'num_instances': fields.IntegerField(nullable=False),
+        'num_io_ops': fields.IntegerField(nullable=False),
+
+        'pci_requests': fields.ObjectField('InstancePCIRequest',
+                                           nullable=True),
+        'numa_topology': fields.ObjectField('InstanceNUMATopology',
+                                            nullable=True),
+    }
+
+    automatic_fields = {'free_ram_mb',
+                        'disk_mb_used',
+                        'vcpus_used',
+                        'num_instances',
+                        'num_io_ops',
+                        }
+
+    @classmethod
+    def from_primitives(cls, seed, origin_host,
+                        target_host, instance_uuid, claim):
+        obj = cls()
+
+        obj.seed = seed
+        obj.origin_host = origin_host
+        obj.target_host = target_host
+        obj.instance_uuid = instance_uuid
+        obj.proceed = True
+
+        obj.free_ram_mb = - claim.memory_mb
+        obj.disk_mb_used = claim.disk_gb * 1024
+        obj.vcpus_used = claim.vcpus
+        obj.num_instances = 1
+        obj.num_io_ops = 1
+        obj.pci_requests = claim.pci_requests
+        obj.numa_topology = claim.numa_topology
+
+        return obj
+
+
+@base.NovaObjectRegistry.register
+class CacheCommit(base.NovaObject):
+    # Version 1.0: Initial version
+    VERSION = '1.0'
