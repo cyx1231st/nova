@@ -121,8 +121,6 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                                       "for instance %(id)s!") %
                                       {'claim': claim,
                                        'id': claim.instance_uuid})
-            elif isinstance(item, objects.CacheCommit):
-                LOG.warn(_LW("Received a test commit %s") % item)
             elif 'version_expected' in item:
                 success = self.host_state.process_commit(item)
                 LOG.info(_LI("process commit from %(host)s: %(commit)s") %
