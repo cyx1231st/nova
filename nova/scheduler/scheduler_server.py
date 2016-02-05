@@ -84,7 +84,7 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
             return
         claim_reply = objects.ClaimReply.from_claim(claim, proceed)
         if claim.origin_host == self.host:
-            cache_update = claim.to_cache_update()
+            cache_update = claim.to_cache_update(proceed)
         else:
             cache_update = None
         cache_commit = cache_manager.build_commit(

@@ -312,6 +312,23 @@ class CacheClaim(base.NovaObject):
 
         return obj
 
+    def to_cache_update(self, proceed):
+        incremental_updates = {}
+        for field in self.incremental_fields:
+            val = getattr(self, field)
+            if not proceed:
+                val = -val
+            if val:
+                incremental_updates[field] = val
+
+        # TODO(Yingxin) Incremental update pci_stats
+        # TODO(Yingxin) Incremental update numa_topology
+
+        return {'expected_version': None,
+                'incremental_updates': incremental_updates,
+                'overwrite_updates': {},
+                'special_updates': {}}
+
 
 @base.NovaObjectRegistry.register
 class ClaimReply(base.NovaObject):
