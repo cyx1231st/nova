@@ -15,7 +15,6 @@
 
 import bisect
 from eventlet import queue
-from functools import partial
 
 from oslo_log import log as logging
 
@@ -57,15 +56,15 @@ class RemoteManagerBase(object):
 
     def _disable(self):
         raise NotImplementedError(
-                "RemoteManagerBase._disable not implemented!")
+            "RemoteManagerBase._disable not implemented!")
 
     def _activate(self, item, seed):
         raise NotImplementedError(
-                "RemoteManagerBase._activate not implemented!")
+            "RemoteManagerBase._activate not implemented!")
 
     def _refresh(self, context):
         raise NotImplementedError(
-                "RemoteManagerBase._refresh not implemented!")
+            "RemoteManagerBase._refresh not implemented!")
 
     def _do_periodical(self):
         pass
@@ -349,20 +348,20 @@ class MessagePipe(object):
                                   messages=msgs)
 
     def activate(self, initial_msg=None):
+        self.enabled = True
         if self.async_mode:
             self.queue = queue.Queue()
             if self.thread:
                 self.thread.kill()
             self.thread = utils.spawn(self._dispatch_msgs)
-        self.enabled = True
         if initial_msg is not None:
             self.put(initial_msg)
 
     def disable(self):
         self.queue = None
+        self.enabled = False
         if self.thread:
             self.thread.kill()
-        self.enabled = False
 
     def put(self, msg):
         if not self.enabled:
@@ -371,7 +370,7 @@ class MessagePipe(object):
                       % {'label': self.label, 'msg': msg})
             return
         if self.async_mode:
-            if not self.thread:
+            if self.thread.dead:
                 LOG.error(_LE("MessagePipe %s thread is killed "
                               "unexpectedly, respawn!") % self.label)
                 self.thread = utils.spawn(self._dispatch_msgs)
