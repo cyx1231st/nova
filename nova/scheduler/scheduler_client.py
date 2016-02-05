@@ -45,7 +45,6 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                 label=self.host)
         self.claim_records = cache_manager.ClaimRecords(
                 label=self.host)
-        self.seed = random.randint(0, 1000000)
         self.host_state = None
 
     def _activate(self, cache, seed):
@@ -75,9 +74,9 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         LOG.info(_LI("Report cache %(host)s: %(state)s")
                  % {'host': self.host, 'state': self})
 
-    def process_commit(self, context, commit, seed):
-        if isinstance(commit, objects.HostState):
-            self.activate(commit, seed)
+    def process_commits(self, context, commits, seed):
+        if 'cache_refresh' in commits[0]:
+            self.activate(commits[0]['cache_refresh'], seed)
             return
 
         if not self.expect_active(context):
@@ -90,22 +89,18 @@ class SharedHostState(cache_manager.RemoteManagerBase):
             self.refresh(context)
             return
 
-        success = True
-        for item in commit:
-            if isinstance(item, objects.CacheClaim):
-                claim = item
-                proceed = claim.proceed
-                if claim.origin_host != self.manager.host:
+        for commit in commits:
+            claim_replies = commit['claim_replies']
+            for reply in claim_replies:
+                if reply.origin_host != self.manager.host:
                     LOG.info(_LI("receive %(instance)s to %(host)s from "
                                  "%(scheduler)s") %
-                             {'instance': claim.instance_uuid,
-                              'host': claim.target_host,
-                              'scheduler': claim.origin_host})
-                    self.host_state.process_claim(claim, proceed)
-                    LOG.debug("Updated state: %s" % self.host_state)
+                             {'instance': reply.instance_uuid,
+                              'host': reply.target_host,
+                              'scheduler': reply.origin_host})
                 else:
-                    tracked_claim = self.claim_records.pop(claim.seed)
-
+                    tracked_claim = self.claim_records.pop(reply.seed)
+                    proceed = reply.proceed
                     if tracked_claim and not proceed:
                         LOG.info(_LI("Failed_ %(instance)s to %(host)s") %
                                  {'instance': tracked_claim.instance_uuid,
@@ -117,19 +112,20 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                                  {'instance': tracked_claim.instance_uuid,
                                   'host': tracked_claim.target_host})
                     else:
-                        LOG.error(_LE("Unrecognized remote claim %(claim) "
+                        LOG.error(_LE("Unrecognized remote reply %(claim) "
                                       "for instance %(id)s!") %
-                                      {'claim': claim,
-                                       'id': claim.instance_uuid})
-            elif 'version_expected' in item:
-                success = self.host_state.process_commit(item)
-                LOG.info(_LI("process commit from %(host)s: %(commit)s") %
-                         {'host': self.host, 'commit': item})
+                                      {'claim': reply,
+                                       'id': reply.instance_uuid})
+
+            success = True
+            cache_update = commit['cache_update']
+            if cache_update:
+                success = self.host_state.process_update(cache_update)
+                LOG.info(_LI("process update from %(host)s: %(update)s") %
+                         {'host': self.host, 'update': cache_update})
                 LOG.debug("Updated state: %s" % self)
-            else:
-                LOG.error(_LE("Unknown to commit %s!") % item)
-        if not success:
-            LOG.info(_LI("HostState doesn't match."))
+            if not success:
+                LOG.info(_LI("HostState version doesn't match."))
 
     def abort_claims(self, claims):
         if not self.is_activated():
@@ -154,7 +150,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
         cache_claim = objects.CacheClaim.from_primitives(
                 self.seed, self.manager.host, self.host,
                 spec_obj.instance_uuid, claim)
-        self.seed += 1
+        self.increase_seed()
         self.host_state.process_claim(cache_claim, True)
         spec_obj.numa_topology = cache_claim.numa_topology
         self.claim_records.track(cache_claim)
@@ -184,7 +180,7 @@ class SchedulerClients(cache_manager.CacheManagerBase):
         LOG.debug("Get commit #%(seed)d from host %(compute)s: %(commit)s.",
                   {"commit": commit, "compute": compute, "seed": seed})
         remote_obj = self._get_remote(compute, "commits")
-        remote_obj.process_commit(context, commit, seed)
+        remote_obj.process_commits(context, commit, seed)
 
     def abort_claims(self, claims):
         for claim in claims:

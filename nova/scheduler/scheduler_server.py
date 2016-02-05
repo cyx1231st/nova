@@ -14,7 +14,6 @@
 #    under the License.
 
 from functools import partial
-import random
 
 from oslo_log import log as logging
 
@@ -47,8 +46,6 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
         super(SchedulerServer, self).__init__(host, api, manager)
         self.message_pipe = cache_manager.MessagePipe(
             self._dispatch_commits, True, label=self.host)
-        self.seed = random.randint(0, 1000000)
-        LOG.info(_LI("Seed %d") % self.seed)
 
     def _activate(self, item, seed):
         self.message_pipe.activate("refresh")
@@ -64,12 +61,13 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
         if not self.manager.host_state:
             LOG.error(_LE("Host state is not available, abort dispatching!"))
             self.disable()
-
-        self.seed = self.seed + 1
+        
         if messages[0] == "refresh":
             LOG.info(_LI("Scheduler %(host)s is refreshed by %(seed)d!")
                      % {'host': self.host, 'seed': self.seed})
-            self.api.send_commit(context, self.manager.host_state,
+            cache_commit = cache_manager.build_commit_from_cache(
+                self.manager.host_state)
+            self.api.send_commit(context, [cache_commit],
                                  self.host, self.seed)
         else:
             LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
@@ -77,15 +75,24 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
                      % {'scheduler': self.host,
                         'commit': messages,
                         'seed': self.seed})
-            # TODO(Yingxin): merge messages if possible
+            # TODO(Yingxin): Merge commits to reduce rpc message size
             self.api.send_commit(context, messages, self.host, self.seed)
+        self.increase_seed()
 
-    def send_claim(self, context, claim, proceed):
-        claim.proceed = proceed
-        self.send_commit(context, claim)
+    def reply_claim(self, context, claim, proceed):
+        if not self.is_activated():
+            return
+        claim_reply = objects.ClaimReply.from_claim(claim, proceed)
+        if claim.origin_host == self.host:
+            cache_update = claim.to_cache_update()
+        else:
+            cache_update = None
+        cache_commit = cache_manager.build_commit(
+                claim_reply=claim_reply,
+                cache_update=cache_update)
+        self.send_commit(context, cache_commit)
 
     def send_commit(self, context, commit):
-        # Do not send anything when not activated
         if not self.is_activated():
             return
         self.message_pipe.put(commit)
@@ -109,7 +116,7 @@ class SchedulerServers(cache_manager.CacheManagerBase):
 
     def claim(self, context, claim, limits):
         if not self.host_state:
-            LOG.warn(_LW("Host state is not ready, ignored claim: %s")
+            LOG.warn(_LW("Host state is not ready, ignore claim: %s")
                      % claim)
             return
         remote_obj = self._get_remote(claim.origin_host, "claim")
@@ -120,7 +127,7 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         except exception.ComputeResourcesUnavailable as e:
             LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
                      % {'scheduler': claim.origin_host, 'claim': claim})
-            remote_obj.send_claim(context, claim, False)
+            remote_obj.reply_claim(context, claim, False)
             raise e
 
         LOG.info(_LI("Success scheduler %(scheduler)s claim: %(claim)s!")
@@ -128,7 +135,7 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         self.host_state.process_claim(claim, True)
         self.claim_records.track(claim)
         for remote in self.get_active_managers():
-            remote.send_claim(context, claim, True)
+            remote.reply_claim(context, claim, True)
 
     def update_from_compute(self, context, compute, claim, proceed):
         if not self.host_state:
@@ -153,13 +160,15 @@ class SchedulerServers(cache_manager.CacheManagerBase):
                 else:
                     LOG.error(_LE("Unrecognized compute claim: %s") % claim)
 
-            commit, test_commit = self.compute_state.update_from_compute(context, compute)
-            if commit:
+            cache_update = self.compute_state.update_from_compute(
+                    context, compute)
+            if cache_update:
                 if claim:
-                    LOG.warn(_LW("EXTRA COMMIT!"))
-                LOG.info(_LI("Host state change: %s") % commit)
-                LOG.info(_LI("Host state change(test): %s") % test_commit)
-                self.host_state.process_commit(commit)
+                    LOG.warn(_LW("Extra update after claim %s is synced!")
+                             % claim)
+                LOG.info(_LI("Host state update: %s") % cache_update)
+                self.host_state.process_update(cache_update)
+                cache_commit = cache_manager.build_commit(
+                        cache_update=cache_update)
                 for remote in self.get_active_managers():
-                    remote.send_commit(context, commit)
-                    remote.send_commit(context, test_commit)
+                    remote.send_commit(context, cache_commit)

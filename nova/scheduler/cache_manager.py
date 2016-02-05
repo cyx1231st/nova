@@ -15,6 +15,7 @@
 
 import bisect
 from eventlet import queue
+import random
 
 from oslo_log import log as logging
 
@@ -53,6 +54,9 @@ class RemoteManagerBase(object):
         self._side_affects = set()
 
         self.standby()
+        self.seed = random.randint(0, 1000000)
+        LOG.info(_LI("Remote %(host)s start at seed %(seed)d")
+                 % {'host': self.host, 'seed': self.seed})
 
     def _disable(self):
         raise NotImplementedError(
@@ -68,6 +72,9 @@ class RemoteManagerBase(object):
 
     def _do_periodical(self):
         pass
+
+    def increase_seed(self):
+        self.seed += 1
 
     def standby(self):
         LOG.info(_LI("Remote %s is in standby mode!") % self.host)
@@ -94,7 +101,7 @@ class RemoteManagerBase(object):
     def expect_active(self, context):
         # NOTE(Yingxin): This should be only used in methods called by RPC,
         # in order to notify remote services even if the servicegroup record is
-        # not available. The misuse of this method can cause fake active
+        # not available yet. The misuse of this method can cause fake active
         # state.
         if not self.is_activated():
             LOG.error(_LE("Remote %s is not active, refreshing...")
@@ -378,3 +385,15 @@ class MessagePipe(object):
         else:
             self.consume_callback(context=self.context,
                                   messages=[msg])
+
+
+def build_commit_from_cache(host_state):
+    return {'cache_refresh': host_state}
+
+
+def build_commit(claim_reply=None, cache_update=None):
+    if claim_reply:
+        claim_replies = [claim_reply]
+    else:
+        claim_replies = []
+    return {'claim_replies': claim_replies, 'cache_update': cache_update}

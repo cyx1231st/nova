@@ -148,7 +148,6 @@ class HostState(base.NovaObject):
         new_version = self.micro_version
         new_state = HostState.from_primitives(
                 context, compute, version=new_version)
-        commit = {}
         incremental_updates = {}
         overwrite_updates = {}
         special_updates = {}
@@ -159,7 +158,6 @@ class HostState(base.NovaObject):
             change = new - old
             if change:
                 setattr(self, field, new)
-                commit[field] = change
                 incremental_updates[field] = change
 
         for field in self.overwrite_fields:
@@ -168,40 +166,30 @@ class HostState(base.NovaObject):
             if new != old:
                 new = copy.deepcopy(new)
                 setattr(self, field, new)
-                commit[field] = new
                 overwrite_updates[field] = new
 
-        # TODO(Yingxin): Override __eq__ in MonitorMetricList
+        # NOTE(Yingxin): Override __eq__ in MonitorMetricList or keep this.
         new = new_state.metrics
         new_list = new.to_list()
         old_list = self.metrics.to_list()
         if new_list != old_list:
             new = copy.deepcopy(new)
             self.metrics = new
-            commit['metrics'] = new
             special_updates['metrics'] = new
 
-        # TODO(Yingxin): increment update pci status
-        # TODO(Yingxin): increment update numa_topology
+        # TODO(Yingxin): Incremental update pci status
+        # TODO(Yingxin): Incremental update numa_topology
 
-        if commit:
-            commit['micro_version'] = 1
+        if incremental_updates or overwrite_updates or special_updates:
             incremental_updates['micro_version'] = 1
             self.micro_version = self.micro_version + 1
-            commit['version_expected'] = self.micro_version
 
-            # test filling some complicated objects
-            overwrite_updates['metrics'] = self.metrics
-            overwrite_updates['numa_topology'] = self.numa_topology
-            overwrite_updates['host_state'] = self
-
-            cache_update = {'micro_version': self.micro_version,
+            cache_update = {'expected_version': self.micro_version,
                             'incremental_updates': incremental_updates,
                             'overwrite_updates': overwrite_updates,
                             'special_updates': special_updates}
-            test_commit = {'cache_update': cache_update}
 
-            return commit, test_commit
+            return cache_update
         else:
             return None, None
 
@@ -220,29 +208,27 @@ class HostState(base.NovaObject):
                 setattr(self, field,
                         getattr(self, field) - _getattr(change, field))
 
-    def process_commit(self, commit):
-        result = True
-        item = commit
+    def process_update(self, cache_update):
+        expected_version = cache_update['expected_version']
+        incremental_updates = cache_update['incremental_updates']
+        overwrite_updates = cache_update['overwrite_updates']
+        special_updates = cache_update['special_updates']
 
-        keys = set(item.keys())
+        self._process_incremental_fields(incremental_updates.keys(),
+                                         incremental_updates, True)
+        for field in overwrite_updates.keys():
+            setattr(self, field, overwrite_updates[field])
 
-        incremental_keys = keys & self.incremental_fields
-        self._process_incremental_fields(incremental_keys, item, True)
+        if 'metrics' in special_updates:
+            setattr(self, 'metrics', special_updates['metrics'])
 
-        overwrite_keys = keys & self.overwrite_fields
-        for field in overwrite_keys:
-            setattr(self, field, item[field])
+        # TODO(Yingxin) Incremental update pci_stats
+        # TODO(Yingxin) Incremental update numa_topology
 
-        if 'metrics' in keys:
-            setattr(self, 'metrics', item['metrics'])
-
-        # TODO() pci_stats
-        # TODO() increment numa_topology
-
-        if self.micro_version != item['version_expected']:
-            result = False
-
-        return result
+        if self.micro_version != expected_version:
+            return False
+        else:
+            return True
 
     def process_claim(self, claim, apply_claim):
         self._process_incremental_fields(objects.CacheClaim.incremental_fields,
@@ -286,7 +272,6 @@ class CacheClaim(base.NovaObject):
         'origin_host': fields.StringField(nullable=False),
         'target_host': fields.StringField(nullable=False),
         'instance_uuid': fields.UUIDField(nullable=False),
-        'proceed': fields.BooleanField(nullable=False),
 
         'free_ram_mb': fields.IntegerField(nullable=False),
         'disk_mb_used': fields.IntegerField(nullable=False),
@@ -316,7 +301,6 @@ class CacheClaim(base.NovaObject):
         obj.origin_host = origin_host
         obj.target_host = target_host
         obj.instance_uuid = instance_uuid
-        obj.proceed = True
 
         obj.free_ram_mb = - claim.memory_mb
         obj.disk_mb_used = claim.disk_gb * 1024
@@ -342,6 +326,15 @@ class ClaimReply(base.NovaObject):
         'proceed': fields.BooleanField(nullable=False),
     }
 
+    @classmethod
+    def from_claim(cls, claim, proceed):
+        obj = cls()
+        obj.seed = claim.seed
+        obj.origin_host = claim.origin_host
+        obj.target_host = claim.target_host
+        obj.instance_uuid = claim.instance_uuid
+        obj.proceed = proceed
+        return obj
 
 # TODO(Yingxin): It still seems impossible to implement a mix-typed dict field
 # that can work with oslo_messaging, need to look deeper and figure out how.
