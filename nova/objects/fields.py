@@ -515,6 +515,15 @@ class NetworkModel(FieldType):
             ','.join([str(vif['id']) for vif in value]))
 
 
+class RelaxedDict(FieldType):
+    @staticmethod
+    def coerce(obj, attr, value):
+        if isinstance(value, dict):
+            return value
+        else:
+            raise ValueError(_('A dict is required for field %s') % attr)
+
+
 class NonNegativeFloat(FieldType):
     @staticmethod
     def coerce(obj, attr, value):

@@ -12,13 +12,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
 import random
+
+from oslo_log import log as logging
 
 from nova import objects
 from nova.objects import base
 from nova.objects import fields
 from nova.virt import hardware
 # from nova.pci import stats as pci_stats
+
+LOG = logging.getLogger(__name__)
+
+
+def _getattr_dict(dict_obj, field):
+    return dict_obj.get(field)
 
 
 @base.NovaObjectRegistry.register
@@ -80,7 +89,7 @@ class HostState(base.NovaObject):
         #        compute.pci_device_pools)
 
         self.host = compute.host
-        self.host_ip = compute.host_ip
+        self.host_ip = copy.deepcopy(compute.host_ip)
         self.hypervisor_type = compute.hypervisor_type
         self.hypervisor_version = compute.hypervisor_version
         self.hypervisor_hostname = compute.hypervisor_hostname
@@ -157,6 +166,7 @@ class HostState(base.NovaObject):
             new = getattr(new_state, field)
             old = getattr(self, field)
             if new != old:
+                new = copy.deepcopy(new)
                 setattr(self, field, new)
                 commit[field] = new
                 overwrite_updates[field] = new
@@ -166,6 +176,7 @@ class HostState(base.NovaObject):
         new_list = new.to_list()
         old_list = self.metrics.to_list()
         if new_list != old_list:
+            new = copy.deepcopy(new)
             self.metrics = new
             commit['metrics'] = new
             special_updates['metrics'] = new
@@ -179,16 +190,35 @@ class HostState(base.NovaObject):
             self.micro_version = self.micro_version + 1
             commit['version_expected'] = self.micro_version
 
-            test_commit = {
-                    'version_expected': self.micro_version,
-                    'incremental_updates': incremental_updates,
-                    'overwrite_updates': overwrite_updates,
-                    'special_updates': special_updates,
-            }
+            # test filling some complicated objects
+            overwrite_updates['metrics'] = self.metrics
+            overwrite_updates['numa_topology'] = self.numa_topology
+            overwrite_updates['host_state'] = self
+
+            test_commit = objects.CacheCommit.from_primitives(
+                self.micro_version,
+                incremental_updates,
+                overwrite_updates,
+                special_updates)
 
             return commit, test_commit
         else:
             return None, None
+
+    def _process_incremental_fields(self, incremental_fields, change, sign):
+        if isinstance(change, dict):
+            _getattr = _getattr_dict
+        else:
+            _getattr = getattr
+
+        if sign:
+            for field in incremental_fields:
+                setattr(self, field,
+                        getattr(self, field) + _getattr(change, field))
+        else:
+            for field in incremental_fields:
+                setattr(self, field,
+                        getattr(self, field) - _getattr(change, field))
 
     def process_commit(self, commit):
         result = True
@@ -196,12 +226,11 @@ class HostState(base.NovaObject):
 
         keys = set(item.keys())
 
-        changed_keys = keys & self.incremental_fields
-        for field in changed_keys:
-            setattr(self, field, getattr(self, field) + item[field])
+        incremental_keys = keys & self.incremental_fields
+        self._process_incremental_fields(incremental_keys, item, True)
 
-        reset_keys = keys & self.overwrite_fields
-        for field in reset_keys:
+        overwrite_keys = keys & self.overwrite_fields
+        for field in overwrite_keys:
             setattr(self, field, item[field])
 
         if 'metrics' in keys:
@@ -215,16 +244,6 @@ class HostState(base.NovaObject):
 
         return result
 
-    def _process_incremental_fields(self, incremental_fields, change, sign):
-        if sign:
-            for field in incremental_fields:
-                setattr(self, field,
-                        getattr(self, field) + getattr(change, field))
-        else:
-            for field in incremental_fields:
-                setattr(self, field,
-                        getattr(self, field) - getattr(change, field))
-
     def process_claim(self, claim, apply_claim):
         self._process_incremental_fields(objects.CacheClaim.incremental_fields,
                                          claim, apply_claim)
@@ -234,13 +253,14 @@ class HostState(base.NovaObject):
             self.numa_topology = hardware.get_host_numa_usage_from_instance(
                     self, claim.numa_topology, not apply_claim)
 
+        if claim.pci_requests is not None:
         # TODO(Yingxin) FORCE apply pci_requests and cells to pci_stats like:
         # if claim['pci_requests']:
         #     self.pci_stats.apply_requests(claim['pci_requests'],
         #                                   claim['numa_topology'].cells)
-        if claim.pci_requests is not None:
             pass
 
+"""
     def __repr__(self):
         return ("HostState(%s, %s) total_usable_ram_mb:%s free_ram_mb:%s "
                 "total_usable_disk_gb:%s free_disk_mb:%s disk_mb_used:%s "
@@ -254,6 +274,7 @@ class HostState(base.NovaObject):
                  self.vcpus_total, self.vcpus_used,
                  self.numa_topology, self.pci_stats,
                  self.num_io_ops, self.num_instances))
+"""
 
 
 @base.NovaObjectRegistry.register
@@ -309,7 +330,6 @@ class CacheClaim(base.NovaObject):
         return obj
 
 
-"""
 @base.NovaObjectRegistry.register
 class CacheCommit(base.NovaObject):
     # Version 1.0: Initial version
@@ -321,6 +341,21 @@ class CacheCommit(base.NovaObject):
         'claim_replies': fields.ListOfObjectsField('ClaimReply',
                                                     nullable=True),
     }
+
+    @classmethod
+    def from_primitives(cls, cache_update=None, claim_replies=None):
+        obj = cls()
+        obj.cache_update = cache_update
+        obj.claim_replies = claim_replies or []
+        obj.cache_refresh = None
+
+    @classmethod
+    def from_cache_updates(cls, expected_version, incrementals,
+                           overwrites, specials):
+        return cls.from_primitives(
+                cache_update=
+                objects.CacheUpdate(expected_version, incrementals,
+                                    overwrites, specials))
 
 
 @base.NovaObjectRegistry.register
@@ -345,9 +380,16 @@ class CacheUpdate(base.NovaObject):
     fields = {
         'expected_version': fields.IntegerField(nullable=False),
         'incremental_updates': fields.DictOfIntegersField(nullable=True),
-        # oslo_versionedobjects doesn't support mixed typed dict, the
-        # workaround is to use unstructured dict instead
-        'overwrite_updates': fields.Dict(nullable=True),
-        'special_updates': fields.Dict(nullable=True),
+        'overwrite_updates': fields.ObjectField('RelaxedDict', nullable=True),
+        'special_updates': fields.ObjectField('RelaxedDict', nullable=True),
     }
-"""
+
+    @classmethod
+    def from_primitives(cls, expected_version, incrementals,
+                        overwrites, specials):
+        obj = cls()
+        obj.expected_version = expected_version
+        obj.incremental_updates = incrementals
+        obj.overwrite_updates = overwrites
+        obj.special_updates = specials
+        return obj
