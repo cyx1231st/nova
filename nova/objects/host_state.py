@@ -191,7 +191,7 @@ class HostState(base.NovaObject):
 
             return cache_update
         else:
-            return None, None
+            return None
 
     def _process_incremental_fields(self, incremental_fields, change, sign):
         if isinstance(change, dict):
@@ -225,7 +225,9 @@ class HostState(base.NovaObject):
         # TODO(Yingxin) Incremental update pci_stats
         # TODO(Yingxin) Incremental update numa_topology
 
-        if self.micro_version != expected_version:
+        if expected_version is None:
+            return True
+        elif self.micro_version != expected_version:
             return False
         else:
             return True

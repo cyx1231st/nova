@@ -6274,9 +6274,10 @@ class ComputeManager(manager.Manager):
                              "update_available_resource."), nodename)
                 continue
             except Exception as e:
+                trace_info = traceback.format_exception(*sys.exc_info())
                 LOG.error(_LE("Error updating resources for node "
-                              "%(node)s: %(e)s"),
-                          {'node': nodename, 'e': e})
+                              "%(node)s: %(e)s, %(info)s"),
+                          {'node': nodename, 'e': e, 'info': trace_info})
             new_resource_tracker_dict[nodename] = rt
 
         # NOTE(comstud): Replace the RT cache before looping through
