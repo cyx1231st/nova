@@ -84,12 +84,11 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
             return
         claim_reply = objects.ClaimReply.from_claim(claim, proceed)
         if claim.origin_host == self.host:
-            cache_update = claim.to_cache_update(proceed)
-        else:
             cache_update = None
-        cache_commit = cache_manager.build_commit(
-                claim_reply=claim_reply,
-                cache_update=cache_update)
+        else:
+            cache_update = claim.to_cache_update(proceed)
+        cache_commit = cache_manager.build_commit(claim_reply=claim_reply,
+                                                  cache_update=cache_update)
         self.send_commit(context, cache_commit)
 
     def send_commit(self, context, commit):
@@ -140,9 +139,9 @@ class SchedulerServers(cache_manager.CacheManagerBase):
     def update_from_compute(self, context, compute, claim, proceed):
         if not self.host_state:
             self.host_state = objects.HostState.from_primitives(
-                    context, compute)
+                context, compute)
             self.claim_records.reset(
-                    partial(self.host_state.process_claim, apply_claim=False))
+                partial(self.host_state.process_claim, apply_claim=False))
             self.compute_state = self.host_state.obj_clone()
             self.api.notify_schedulers(context)
             LOG.info(_LI("Compute %s is up!") % self.host)

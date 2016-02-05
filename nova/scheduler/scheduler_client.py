@@ -14,7 +14,6 @@
 #    under the License.
 
 from functools import partial
-import random
 
 from oslo_log import log as logging
 
