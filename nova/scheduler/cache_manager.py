@@ -371,6 +371,10 @@ class MessagePipe(object):
                       % {'label': self.label, 'msg': msg})
             return
         if self.async_mode:
+            if not self.thread:
+                LOG.error(_LE("MessagePipe %s thread is killed "
+                              "unexpectedly, respawn!") % self.label)
+                self.thread = utils.spawn(self._dispatch_msgs)
             self.queue.put_nowait(msg)
         else:
             self.consume_callback(context=self.context,

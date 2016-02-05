@@ -158,7 +158,6 @@ class SchedulerServers(cache_manager.CacheManagerBase):
                 if claim:
                     LOG.warn(_LW("EXTRA COMMIT!"))
                 LOG.info(_LI("Host state change: %s") % commit)
-                test_commit = {'cache_update': test_commit}
                 LOG.info(_LI("Host state change(test): %s") % test_commit)
                 self.host_state.process_commit(commit)
                 for remote in self.get_active_managers():

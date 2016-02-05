@@ -195,11 +195,11 @@ class HostState(base.NovaObject):
             overwrite_updates['numa_topology'] = self.numa_topology
             overwrite_updates['host_state'] = self
 
-            test_commit = objects.CacheCommit.from_primitives(
-                self.micro_version,
-                incremental_updates,
-                overwrite_updates,
-                special_updates)
+            cache_update = {'micro_version': self.micro_version,
+                            'incremental_updates': incremental_updates,
+                            'overwrite_updates': overwrite_updates,
+                            'special_updates': special_updates}
+            test_commit = {'cache_update': cache_update}
 
             return commit, test_commit
         else:
@@ -248,19 +248,19 @@ class HostState(base.NovaObject):
         self._process_incremental_fields(objects.CacheClaim.incremental_fields,
                                          claim, apply_claim)
 
-        # TODO(Yingxin): FORCE apply numa topology
+        # TODO(Yingxin): Overcommit numa topology here, because it is possible
+        # that a remote commit is conflict with a local claim record.
         if claim.numa_topology is not None:
             self.numa_topology = hardware.get_host_numa_usage_from_instance(
                     self, claim.numa_topology, not apply_claim)
 
         if claim.pci_requests is not None:
-        # TODO(Yingxin) FORCE apply pci_requests and cells to pci_stats like:
-        # if claim['pci_requests']:
-        #     self.pci_stats.apply_requests(claim['pci_requests'],
-        #                                   claim['numa_topology'].cells)
+            # TODO(Yingxin) Overcommit pci_stats:
+            # if claim['pci_requests']:
+            #     self.pci_stats.apply_requests(claim['pci_requests'],
+            #                                   claim['numa_topology'].cells)
             pass
 
-"""
     def __repr__(self):
         return ("HostState(%s, %s) total_usable_ram_mb:%s free_ram_mb:%s "
                 "total_usable_disk_gb:%s free_disk_mb:%s disk_mb_used:%s "
@@ -274,7 +274,6 @@ class HostState(base.NovaObject):
                  self.vcpus_total, self.vcpus_used,
                  self.numa_topology, self.pci_stats,
                  self.num_io_ops, self.num_instances))
-"""
 
 
 @base.NovaObjectRegistry.register
@@ -331,6 +330,24 @@ class CacheClaim(base.NovaObject):
 
 
 @base.NovaObjectRegistry.register
+class ClaimReply(base.NovaObject):
+    # Version 1.0: Initial version
+    VERSION = '1.0'
+
+    fields = {
+        'seed': fields.IntegerField(nullable=False),
+        'origin_host': fields.StringField(nullable=False),
+        'target_host': fields.StringField(nullable=False),
+        'instance_uuid': fields.UUIDField(nullable=False),
+        'proceed': fields.BooleanField(nullable=False),
+    }
+
+
+# TODO(Yingxin): It still seems impossible to implement a mix-typed dict field
+# that can work with oslo_messaging, need to look deeper and figure out how.
+
+"""
+@base.NovaObjectRegistry.register
 class CacheCommit(base.NovaObject):
     # Version 1.0: Initial version
     VERSION = '1.0'
@@ -348,28 +365,14 @@ class CacheCommit(base.NovaObject):
         obj.cache_update = cache_update
         obj.claim_replies = claim_replies or []
         obj.cache_refresh = None
+        return obj
 
     @classmethod
-    def from_cache_updates(cls, expected_version, incrementals,
-                           overwrites, specials):
-        return cls.from_primitives(
-                cache_update=
-                objects.CacheUpdate(expected_version, incrementals,
-                                    overwrites, specials))
-
-
-@base.NovaObjectRegistry.register
-class ClaimReply(base.NovaObject):
-    # Version 1.0: Initial version
-    VERSION = '1.0'
-
-    fields = {
-        'seed': fields.IntegerField(nullable=False),
-        'origin_host': fields.StringField(nullable=False),
-        'target_host': fields.StringField(nullable=False),
-        'instance_uuid': fields.UUIDField(nullable=False),
-        'proceed': fields.BooleanField(nullable=False),
-    }
+    def from_updates(cls, expected_version, incrementals,
+                     overwrites, specials):
+        cache_update = objects.CacheUpdate.from_primitives(
+                expected_version, incrementals, overwrites, specials)
+        return cls.from_primitives(cache_update = cache_update)
 
 
 @base.NovaObjectRegistry.register
@@ -380,8 +383,10 @@ class CacheUpdate(base.NovaObject):
     fields = {
         'expected_version': fields.IntegerField(nullable=False),
         'incremental_updates': fields.DictOfIntegersField(nullable=True),
-        'overwrite_updates': fields.ObjectField('RelaxedDict', nullable=True),
-        'special_updates': fields.ObjectField('RelaxedDict', nullable=True),
+        # TODO(Yingxin): It still seems impossible to implement a mix-typed
+        # dict, need to look deeper and figure out how.
+        'overwrite_updates': fields.RelaxedDictField(nullable=True),
+        'special_updates': fields.RelaxedDictField(nullable=True),
     }
 
     @classmethod
@@ -393,3 +398,4 @@ class CacheUpdate(base.NovaObject):
         obj.overwrite_updates = overwrites
         obj.special_updates = specials
         return obj
+"""
