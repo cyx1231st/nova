@@ -153,11 +153,14 @@ class SchedulerServers(cache_manager.CacheManagerBase):
                 else:
                     LOG.error(_LE("Unrecognized compute claim: %s") % claim)
 
-            commit = self.compute_state.update_from_compute(context, compute)
+            commit, test_commit = self.compute_state.update_from_compute(context, compute)
             if commit:
                 if claim:
                     LOG.warn(_LW("EXTRA COMMIT!"))
                 LOG.info(_LI("Host state change: %s") % commit)
+                test_commit = {'cache_update': test_commit}
+                LOG.info(_LI("Host state change(test): %s") % test_commit)
                 self.host_state.process_commit(commit)
                 for remote in self.get_active_managers():
                     remote.send_commit(context, commit)
+                    remote.send_commit(context, test_commit)

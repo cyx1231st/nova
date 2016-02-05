@@ -11,6 +11,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+
 import random
 
 from nova import objects
@@ -72,6 +73,8 @@ class HostState(base.NovaObject):
         self.vcpus_used = compute.vcpus_used
 
         self.numa_topology = compute.numa_topology
+
+        # TODO(Yingxin): Handle pci status
         self.pci_stats = None
         # self.pci_stats = pci_stats.PciDeviceStats(
         #        compute.pci_device_pools)
@@ -106,70 +109,86 @@ class HostState(base.NovaObject):
         state._from_compute(compute)
         return state
 
-    _special = {'pci_stats', 'metrics'}
-    _integer_fields = {'total_usable_ram_mb',
-                       'free_ram_mb',
-                       'total_usable_disk_gb',
-                       'disk_mb_used',
-                       'free_disk_mb',
-                       'vcpus_total',
-                       'vcpus_used',
-                       'num_instances',
-                       'num_io_ops',
-                       'micro_version',
-                       }
-    _reset_fields = {'host',
-                     'host_ip',
-                     'hypervisor_type',
-                     'hypervisor_version',
-                     'hypervisor_hostname',
-                     'cpu_info',
-                     'supported_instances',
-                     'cpu_allocation_ratio',
-                     'ram_allocation_ratio',
-                     'numa_topology',
-                     }
+    incremental_fields = {'total_usable_ram_mb',
+                          'free_ram_mb',
+                          'total_usable_disk_gb',
+                          'disk_mb_used',
+                          'free_disk_mb',
+                          'vcpus_total',
+                          'vcpus_used',
+                          'num_instances',
+                          'num_io_ops',
+                          'micro_version',
+                          }
+    overwrite_fields = {'host',
+                        'host_ip',
+                        'hypervisor_type',
+                        'hypervisor_version',
+                        'hypervisor_hostname',
+                        'cpu_info',
+                        'supported_instances',
+                        'cpu_allocation_ratio',
+                        'ram_allocation_ratio',
+                        'numa_topology',
+                        }
+
+    # NOTE(Yingxin): Others are special handled fields: pci_stats, metrics.
+    # Temporarly add numa_topology to overwrite_fields
 
     def update_from_compute(self, context, compute):
         new_version = self.micro_version
         new_state = HostState.from_primitives(
                 context, compute, version=new_version)
         commit = {}
+        incremental_updates = {}
+        overwrite_updates = {}
+        special_updates = {}
 
-        for field in self._integer_fields:
+        for field in self.incremental_fields:
             new = getattr(new_state, field)
             old = getattr(self, field)
             change = new - old
             if change:
                 setattr(self, field, new)
                 commit[field] = change
+                incremental_updates[field] = change
 
-        for field in self._reset_fields:
+        for field in self.overwrite_fields:
             new = getattr(new_state, field)
             old = getattr(self, field)
             if new != old:
                 setattr(self, field, new)
                 commit[field] = new
+                overwrite_updates[field] = new
 
+        # TODO(Yingxin): Override __eq__ in MonitorMetricList
         new = new_state.metrics
         new_list = new.to_list()
         old_list = self.metrics.to_list()
         if new_list != old_list:
             self.metrics = new
             commit['metrics'] = new
+            special_updates['metrics'] = new
 
-        # TODO() proceed pci_stats
-        # TODO() increment numa_topology
+        # TODO(Yingxin): increment update pci status
+        # TODO(Yingxin): increment update numa_topology
 
         if commit:
             commit['micro_version'] = 1
+            incremental_updates['micro_version'] = 1
             self.micro_version = self.micro_version + 1
             commit['version_expected'] = self.micro_version
-            return commit
-        else:
-            return None
 
-    _special_keys = {'version_expected'}
+            test_commit = {
+                    'version_expected': self.micro_version,
+                    'incremental_updates': incremental_updates,
+                    'overwrite_updates': overwrite_updates,
+                    'special_updates': special_updates,
+            }
+
+            return commit, test_commit
+        else:
+            return None, None
 
     def process_commit(self, commit):
         result = True
@@ -177,11 +196,11 @@ class HostState(base.NovaObject):
 
         keys = set(item.keys())
 
-        changed_keys = keys & self._integer_fields
+        changed_keys = keys & self.incremental_fields
         for field in changed_keys:
             setattr(self, field, getattr(self, field) + item[field])
 
-        reset_keys = keys & self._reset_fields
+        reset_keys = keys & self.overwrite_fields
         for field in reset_keys:
             setattr(self, field, item[field])
 
@@ -196,19 +215,19 @@ class HostState(base.NovaObject):
 
         return result
 
-    def _process_automatic_fields(self, automatic_fields, change, sign):
+    def _process_incremental_fields(self, incremental_fields, change, sign):
         if sign:
-            for field in automatic_fields:
+            for field in incremental_fields:
                 setattr(self, field,
                         getattr(self, field) + getattr(change, field))
         else:
-            for field in automatic_fields:
+            for field in incremental_fields:
                 setattr(self, field,
                         getattr(self, field) - getattr(change, field))
 
     def process_claim(self, claim, apply_claim):
-        self._process_automatic_fields(objects.CacheClaim.automatic_fields,
-                                       claim, apply_claim)
+        self._process_incremental_fields(objects.CacheClaim.incremental_fields,
+                                         claim, apply_claim)
 
         # TODO(Yingxin): FORCE apply numa topology
         if claim.numa_topology is not None:
@@ -261,12 +280,12 @@ class CacheClaim(base.NovaObject):
                                             nullable=True),
     }
 
-    automatic_fields = {'free_ram_mb',
-                        'disk_mb_used',
-                        'vcpus_used',
-                        'num_instances',
-                        'num_io_ops',
-                        }
+    incremental_fields = {'free_ram_mb',
+                          'disk_mb_used',
+                          'vcpus_used',
+                          'num_instances',
+                          'num_io_ops',
+                          }
 
     @classmethod
     def from_primitives(cls, seed, origin_host,
@@ -290,7 +309,45 @@ class CacheClaim(base.NovaObject):
         return obj
 
 
+"""
 @base.NovaObjectRegistry.register
 class CacheCommit(base.NovaObject):
     # Version 1.0: Initial version
     VERSION = '1.0'
+
+    fields = {
+        'cache_refresh': fields.ObjectField('HostState', nullable=True),
+        'cache_update': fields.ObjectField('CacheUpdate', nullable=True),
+        'claim_replies': fields.ListOfObjectsField('ClaimReply',
+                                                    nullable=True),
+    }
+
+
+@base.NovaObjectRegistry.register
+class ClaimReply(base.NovaObject):
+    # Version 1.0: Initial version
+    VERSION = '1.0'
+
+    fields = {
+        'seed': fields.IntegerField(nullable=False),
+        'origin_host': fields.StringField(nullable=False),
+        'target_host': fields.StringField(nullable=False),
+        'instance_uuid': fields.UUIDField(nullable=False),
+        'proceed': fields.BooleanField(nullable=False),
+    }
+
+
+@base.NovaObjectRegistry.register
+class CacheUpdate(base.NovaObject):
+    # Version 1.0: Initial version
+    VERSION = '1.0'
+
+    fields = {
+        'expected_version': fields.IntegerField(nullable=False),
+        'incremental_updates': fields.DictOfIntegersField(nullable=True),
+        # oslo_versionedobjects doesn't support mixed typed dict, the
+        # workaround is to use unstructured dict instead
+        'overwrite_updates': fields.Dict(nullable=True),
+        'special_updates': fields.Dict(nullable=True),
+    }
+"""

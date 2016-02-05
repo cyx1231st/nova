@@ -127,7 +127,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                          {'host': self.host, 'commit': item})
                 LOG.debug("Updated state: %s" % self)
             else:
-                LOG.error(_LE("Unable to handle commit %s!") % item)
+                LOG.error(_LE("Unknown to commit %s!") % item)
         if not success:
             LOG.info(_LI("HostState doesn't match."))
 
