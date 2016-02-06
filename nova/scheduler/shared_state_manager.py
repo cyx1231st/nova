@@ -71,6 +71,6 @@ class SharedHostManager(host_manager.HostManager):
                                        self._get_aggregates_info(manager.host),
                                        self._get_instance_info(
                                            context,
-                                           manager.host))
+                                           manager))
                        for manager in managers]
         return host_states

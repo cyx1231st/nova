@@ -531,8 +531,7 @@ class HostManager(object):
             host_state.update(compute,
                               dict(service),
                               self._get_aggregates_info(host),
-                              # NOTE(CHANGE): For compatibility
-                              self._get_instance_info(context, compute.host))
+                              self._get_instance_info(context, compute))
 
             seen_nodes.add(state_key)
 
@@ -560,8 +559,7 @@ class HostManager(object):
         In those cases, we need to grab the current InstanceList instead of
         relying on the version in _instance_info.
         """
-        # NOTE(CHANGE): For compatibility
-        host_name = compute
+        host_name = compute.host
         host_info = self._instance_info.get(host_name)
         if host_info and host_info.get("updated"):
             inst_dict = host_info["instances"]

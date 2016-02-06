@@ -38,7 +38,8 @@ class Claim(claims.Claim):
 
     def __init__(self, spec_obj, host_state, limits=None):
         # Stash a copy of the request at the current point of time
-        self.spec_obj = spec_obj.obj_clone()
+        # NOTE(CHANGE):
+        self.spec_obj = spec_obj
         self.host_state = host_state
         self.instance_cells = None
         self.claimed_numa_topology = None
@@ -217,8 +218,8 @@ class Claim(claims.Claim):
 # NOTE(CHANGE): Add remote claim to be used by scheduler servers
 class RemoteClaim(Claim):
     def __init__(self, claim, host_state, limits=None):
-        super(RemoteClaim, self).__init__(None, host_state, limits)
         self.claim = claim
+        super(RemoteClaim, self).__init__(None, host_state, limits)
 
     @property
     def disk_gb(self):
