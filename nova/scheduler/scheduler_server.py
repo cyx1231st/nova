@@ -47,7 +47,7 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
         self.message_pipe = cache_manager.MessagePipe(
             self._dispatch_commits, True, label=self.host)
 
-    def _activate(self, item, seed):
+    def _activate(self, **kwargs):
         self.message_pipe.activate("refresh")
 
     def _disable(self):
