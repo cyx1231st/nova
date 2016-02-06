@@ -135,8 +135,12 @@ class SchedulerManager(manager.Manager):
                                                     instance_uuids)
 
     # NOTE(CHANGE): For compatibility
+    # TODO(Yingxin): Stop sending messages after a scheduler is detected not
+    # using SharedStateManager
     def notified_by_remote(self, context, host_name):
-        self.cache_manager.notified_by_remote(context, host_name)
+        if self.cache_manager:
+            self.cache_manager.notified_by_remote(context, host_name)
 
     def receive_commit(self, context, commit, compute, seed):
-        self.cache_manager.receive_commit(context, commit, compute, seed)
+        if self.cache_manager:
+            self.cache_manager.receive_commit(context, commit, compute, seed)
