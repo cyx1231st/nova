@@ -243,6 +243,8 @@ class HostState(object):
 
         # Consume resources
         self.free_ram_mb -= claim.memory_mb
+
+        # NOTE(CHANGE): Compute node style resource consumption
         # self.free_disk_mb -= claim.disk_gb * 1024
         self.disk_mb_used += claim.disk_gb * 1024
         self.vcpus_used += claim.vcpus
@@ -264,42 +266,13 @@ class HostState(object):
         # and when consume_from_request() is run, we can safely say that there
         # is always an IO operation because we want to move the instance
         self.num_io_ops += 1
-        return claim.to_dict()
+        # NOTE(CHANGE): For compatibility
+        return None
 
     def __repr__(self):
         return ("(%s, %s) ram:%s disk:%s io_ops:%s instances:%s" %
                 (self.host, self.nodename, self.free_ram_mb, self.free_disk_mb,
                  self.num_io_ops, self.num_instances))
-
-
-class SharedHostState(HostState):
-    def __init__(self, remote_manager, aggregates, inst_dict):
-        if not remote_manager.is_activated():
-            raise RuntimeError("Manager %s is assumed active in "
-                               "SharedHostState.__init__()!"
-                               % remote_manager.host)
-        self. _manager = remote_manager
-
-        self.host_state = remote_manager.host_state
-        self.aggregates = aggregates or []
-        self.instances = inst_dict or {}
-        self.limits = {}
-
-        # TODO(Yingxin): Remove after implemented
-        self.pci_stats = pci_stats.PciDeviceStats()
-        # TODO(Yingxin): Doesn't support nodename yet
-        self.nodename = self.host
-
-    # NOTE(Yingxin): Do not implement __setattr__ to make self.host_state
-    # readonly by filters and weighers
-    def __getattr__(self, name):
-        return getattr(self.host_state, name)
-
-    def consume_from_request(self, spec_obj):
-        return self._manager.consume_cache(spec_obj, self.limits)
-
-    def __repr__(self):
-        return self.host_state.__repr__()
 
 
 class HostManager(object):
@@ -332,10 +305,6 @@ class HostManager(object):
         self._instance_info = {}
         if self.tracks_instance_changes:
             self._init_instance_info()
-        self.cache_manager = None
-    
-    def init_compute_clients(self, cache_manager):
-        self.cache_manager = cache_manager
 
     def _load_filters(self):
         return CONF.scheduler_default_filters
@@ -535,14 +504,47 @@ class HostManager(object):
         in HostState are pre-populated and adjusted based on data in the db.
         """
 
-        managers = self.cache_manager.get_active_managers()
-        host_states = [SharedHostState(manager,
-                                       self._get_aggregates_info(manager.host),
-                                       self._get_instance_info(
-                                           context,
-                                           manager.host)) \
-                       for manager in managers]
-        return host_states
+        service_refs = {service.host: service
+                        for service in objects.ServiceList.get_by_binary(
+                            context, 'nova-compute')}
+        # Get resource usage across the available compute nodes:
+        compute_nodes = objects.ComputeNodeList.get_all(context)
+        seen_nodes = set()
+        for compute in compute_nodes:
+            service = service_refs.get(compute.host)
+
+            if not service:
+                LOG.warning(_LW(
+                    "No compute service record found for host %(host)s"),
+                    {'host': compute.host})
+                continue
+            host = compute.host
+            node = compute.hypervisor_hostname
+            state_key = (host, node)
+            host_state = self.host_state_map.get(state_key)
+            if not host_state:
+                host_state = self.host_state_cls(host, node, compute=compute)
+                self.host_state_map[state_key] = host_state
+            # We force to update the aggregates info each time a new request
+            # comes in, because some changes on the aggregates could have been
+            # happening after setting this field for the first time
+            host_state.update(compute,
+                              dict(service),
+                              self._get_aggregates_info(host),
+                              # NOTE(CHANGE): For compatibility
+                              self._get_instance_info(context, compute.host))
+
+            seen_nodes.add(state_key)
+
+        # remove compute nodes from host_state_map if they are not active
+        dead_nodes = set(self.host_state_map.keys()) - seen_nodes
+        for state_key in dead_nodes:
+            host, node = state_key
+            LOG.info(_LI("Removing dead compute node %(host)s:%(node)s "
+                         "from scheduler"), {'host': host, 'node': node})
+            del self.host_state_map[state_key]
+
+        return six.itervalues(self.host_state_map)
 
     def _get_aggregates_info(self, host):
         return [self.aggs_by_id[agg_id] for agg_id in
@@ -558,6 +560,7 @@ class HostManager(object):
         In those cases, we need to grab the current InstanceList instead of
         relying on the version in _instance_info.
         """
+        # NOTE(CHANGE): For compatibility
         host_name = compute
         host_info = self._instance_info.get(host_name)
         if host_info and host_info.get("updated"):
@@ -644,6 +647,7 @@ class HostManager(object):
                              "Re-created its InstanceList."), host_name)
                 return
             host_info["updated"] = True
+            # NOTE(CHANGE): Remove verbose logs
             LOG.debug("Successfully synced instances from host '%s'." %
                      host_name)
         else:

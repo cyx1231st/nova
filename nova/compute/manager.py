@@ -718,6 +718,7 @@ class ComputeManager(manager.Manager):
         super(ComputeManager, self).__init__(service_name="compute",
                                              *args, **kwargs)
 
+        # NOTE(CHANGE)
         self.scheduler_cachemanager = \
                 scheduler_server.SchedulerServers(self.host)
 
@@ -741,6 +742,7 @@ class ComputeManager(manager.Manager):
                         _("%s is not a valid node managed by this "
                           "compute host.") % nodename)
 
+            # NOTE(CHANGE)
             rt = resource_tracker.ResourceTracker(self.host,
                                                   self.driver,
                                                   nodename,
@@ -1855,6 +1857,7 @@ class ComputeManager(manager.Manager):
                      filter_properties, admin_password=None,
                      injected_files=None, requested_networks=None,
                      security_groups=None, block_device_mapping=None,
+                     # NOTE(CHANGE)
                      node=None, limits=None, claim=None):
 
         @utils.synchronized(instance.uuid)
@@ -1869,6 +1872,7 @@ class ComputeManager(manager.Manager):
         # NOTE(danms): We spawn here to return the RPC worker thread back to
         # the pool. Since what follows could take a really long time, we don't
         # want to tie up RPC workers.
+        # NOTE(CHANGE)
         LOG.info(_LI("Received claim %s") % claim)
         utils.spawn_n(_locked_do_build_and_run_instance,
                       context, instance, image, request_spec,
@@ -1884,6 +1888,7 @@ class ComputeManager(manager.Manager):
     def _do_build_and_run_instance(self, context, instance, image,
             request_spec, filter_properties, admin_password, injected_files,
             requested_networks, security_groups, block_device_mapping,
+            # NOTE(CHANGE)
             node=None, limits=None, claim=None):
 
         try:
@@ -1917,6 +1922,7 @@ class ComputeManager(manager.Manager):
                 self._build_and_run_instance(context, instance, image,
                         decoded_files, admin_password, requested_networks,
                         security_groups, block_device_mapping, node, limits,
+                        # NOTE(CHANGE)
                         filter_properties, claim)
             LOG.info(_LI('Took %0.2f seconds to build instance.'),
                      timer.elapsed(), instance=instance)
@@ -1997,6 +2003,7 @@ class ComputeManager(manager.Manager):
                                                clean_task_state=True)
             return build_results.FAILED
 
+    # NOTE(CHANGE)
     def _build_and_run_instance(self, context, instance, image, injected_files,
             admin_password, requested_networks, security_groups,
             block_device_mapping, node, limits, filter_properties, claim):
@@ -2005,8 +2012,10 @@ class ComputeManager(manager.Manager):
         self._notify_about_instance_usage(context, instance, 'create.start',
                 extra_usage_info={'image_name': image_name})
         try:
+            # NOTE(CHANGE)
             self.scheduler_cachemanager.claim(context, claim, limits)
             rt = self._get_resource_tracker(node)
+            # NOTE(CHANGE)
             with rt.instance_claim(context, instance, limits, claim):
                 # NOTE(russellb) It's important that this validation be done
                 # *after* the resource tracker instance claim, as that is where
@@ -6274,6 +6283,7 @@ class ComputeManager(manager.Manager):
                              "update_available_resource."), nodename)
                 continue
             except Exception as e:
+                # NOTE(CHANGE): Print full stack traces
                 trace_info = traceback.format_exception(*sys.exc_info())
                 LOG.error(_LE("Error updating resources for node "
                               "%(node)s: %(e)s, %(info)s"),
@@ -6671,6 +6681,7 @@ class ComputeManager(manager.Manager):
             instance.system_metadata)
         self.driver.unquiesce(context, instance, image_meta)
 
+    # NOTE(CHANGE)
     @wrap_exception()
     def report_host_state(self, context, compute_node, scheduler):
         return self.scheduler_cachemanager.notified_by_remote(

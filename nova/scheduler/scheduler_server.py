@@ -119,6 +119,8 @@ class SchedulerServers(cache_manager.CacheManagerBase):
             LOG.info(_LI("Report cache: %s") % self.host_state)
 
     def claim(self, context, claim, limits):
+        if not claim:
+            return
         if not self.host_state:
             LOG.warn(_LW("Host state is not ready, ignore claim: %s")
                      % claim)
@@ -127,7 +129,7 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         remote_obj.expect_active(context)
 
         try:
-            claims.Claim(claim, self.host_state, limits)
+            claims.RemoteClaim(claim, self.host_state, limits)
         except exception.ComputeResourcesUnavailable as e:
             LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
                      % {'scheduler': claim.origin_host, 'claim': claim})

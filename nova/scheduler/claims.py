@@ -23,7 +23,6 @@ from nova.compute import claims
 from nova import exception
 from nova.i18n import _
 from nova.i18n import _LI
-from nova import objects
 from nova.virt import hardware
 
 
@@ -39,7 +38,7 @@ class Claim(claims.Claim):
 
     def __init__(self, spec_obj, host_state, limits=None):
         # Stash a copy of the request at the current point of time
-        self.spec_obj = spec_obj
+        self.spec_obj = spec_obj.obj_clone()
         self.host_state = host_state
         self.instance_cells = None
         self.claimed_numa_topology = None
@@ -50,46 +49,31 @@ class Claim(claims.Claim):
 
     @property
     def disk_gb(self):
-        if isinstance(self.spec_obj, objects.CacheClaim):
-            return self.spec_obj.disk_mb_used / 1024
-        else:
-            return self.spec_obj.root_gb + self.spec_obj.ephemeral_gb
+        return self.spec_obj.root_gb + self.spec_obj.ephemeral_gb
 
     @property
     def memory_mb(self):
-        if isinstance(self.spec_obj, objects.CacheClaim):
-            return - self.spec_obj.free_ram_mb
-        else:
-            return self.spec_obj.memory_mb
+        return self.spec_obj.memory_mb
 
     @property
     def vcpus(self):
-        if isinstance(self.spec_obj, objects.CacheClaim):
-            return self.spec_obj.vcpus_used
-        else:
-            return self.spec_obj.vcpus
+        return self.spec_obj.vcpus
 
     @property
     def numa_topology(self):
-        if isinstance(self.spec_obj, objects.CacheClaim):
-            return self.spec_obj.numa_topology
-        else:
-            return self.spec_obj.numa_topology
+        return self.spec_obj.numa_topology
 
     @property
     def pci_requests(self):
-        if isinstance(self.spec_obj, objects.CacheClaim):
-            return self.spec_obj.pci_requests
+        pci_requests = self.spec_obj.pci_requests
+        if pci_requests and self.host_state.pci_stats:
+            pci_requests = pci_requests.requests
         else:
-            pci_requests = self.spec_obj.pci_requests
-            if pci_requests and self.host_state.pci_stats:
-                pci_requests = pci_requests.requests
-            else:
-                pci_requests = None
-            return pci_requests
+            pci_requests = None
+        return pci_requests
 
     def abort(self):
-        raise NotImplementedError("There is no need to abort a claim in"
+        raise NotImplemented("There is no need to abort a claim in"
                              " host state.")
 
     def _claim_test(self, resources, limits=None):
@@ -112,8 +96,9 @@ class Claim(claims.Claim):
         vcpus_limit = limits.get('vcpu')
         numa_topology_limit = limits.get('numa_topology')
 
+        # NOTE(CHANGE): Remove verbose log
         LOG.debug("Attempting claim: memory %(memory_mb)d MB, "
-                     "disk %(disk_gb)d GB, vcpus %(vcpus)d CPU",
+                  "disk %(disk_gb)d GB, vcpus %(vcpus)d CPU",
                  {'memory_mb': self.memory_mb, 'disk_gb': self.disk_gb,
                   'vcpus': self.vcpus})
 
@@ -128,6 +113,7 @@ class Claim(claims.Claim):
             raise exception.ComputeResourcesUnavailable(reason=
                     "; ".join(reasons))
 
+        # NOTE(CHANGE): Remove verbose log
         LOG.debug('Claim successful')
 
     def _test_memory(self, resources, limit):
@@ -144,6 +130,7 @@ class Claim(claims.Claim):
         unit = "GB"
         total = resources.total_usable_disk_gb
         # used = resources.total_usable_disk_gb - resources.free_disk_mb / 1024
+        # NOTE(CHANGE): Compute node style resource consumption
         used = resources.disk_mb_used / 1024
         requested = self.disk_gb
 
@@ -200,12 +187,14 @@ class Claim(claims.Claim):
         """Test if the given type of resource needed for a claim can be safely
         allocated.
         """
+        # NOTE(CHANGE): Remove verbose log
         LOG.debug('Total %(type)s: %(total)d %(unit)s, used: %(used).02f '
                     '%(unit)s',
                   {'type': type_, 'total': total, 'unit': unit, 'used': used})
 
         if limit is None:
             # treat resource as unlimited:
+            # NOTE(CHANGE): Remove verbose log
             LOG.debug('%(type)s limit not specified, defaulting to '
                         'unlimited', {'type': type_})
             return
@@ -213,6 +202,7 @@ class Claim(claims.Claim):
         free = limit - used
 
         # Oversubscribed resource policy info:
+        # NOTE(CHANGE): Remove verbose log
         LOG.debug('%(type)s limit: %(limit).02f %(unit)s, '
                      'free: %(free).02f %(unit)s',
                   {'type': type_, 'limit': limit, 'free': free, 'unit': unit})
@@ -222,3 +212,30 @@ class Claim(claims.Claim):
                       '%(unit)s < requested %(requested)d %(unit)s') %
                       {'type': type_, 'free': free, 'unit': unit,
                        'requested': requested})
+
+
+# NOTE(CHANGE): Add remote claim to be used by scheduler servers
+class RemoteClaim(Claim):
+    def __init__(self, claim, host_state, limits=None):
+        super(RemoteClaim, self).__init__(None, host_state, limits)
+        self.claim = claim
+
+    @property
+    def disk_gb(self):
+        return self.claim.disk_mb_used / 1024
+
+    @property
+    def memory_mb(self):
+        return - self.claim.free_ram_mb
+
+    @property
+    def vcpus(self):
+        return self.claim.vcpus_used
+
+    @property
+    def numa_topology(self):
+        return self.claim.numa_topology
+
+    @property
+    def pci_requests(self):
+        return self.claim.pci_requests

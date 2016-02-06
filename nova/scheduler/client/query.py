@@ -99,6 +99,7 @@ class SchedulerQueryClient(object):
         self.scheduler_rpcapi.sync_instance_info(context, host_name,
                                                  instance_uuids)
 
+    # NOTE(CHANGE): For compatibility
     def notify_schedulers(self, context, host_name, scheduler=None):
         self.scheduler_rpcapi.notify_schedulers(context, host_name, scheduler)
 

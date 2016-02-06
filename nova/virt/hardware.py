@@ -1199,6 +1199,7 @@ def instance_topology_from_instance(instance):
     elif isinstance(instance, objects.RequestSpec):
         instance_numa_topology = instance.numa_topology
     else:
+        # NOTE(CHANGE): For compatibility
         if instance is None:
             instance_numa_topology = None
         elif 'numa_topology' in instance:

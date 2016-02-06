@@ -144,7 +144,8 @@ class RemoteCompute(cache_manager.RemoteManagerBase):
 
     def consume_cache(self, spec_obj, limits):
         # TODO(Yingxin): Refactor code to get rid of conductor service when
-        # send scheduler decisions to SchedulerServers with claim.
+        # send scheduler decisions to SchedulerServers with claim. That is to
+        # say, send decisions directly to SchedulerServers.
 
         if not self.is_activated():
             raise exception.ComputeResourcesUnavailable(reason=
@@ -157,6 +158,8 @@ class RemoteCompute(cache_manager.RemoteManagerBase):
         self.increase_seed()
         self.host_state.process_claim(cache_claim, True)
         spec_obj.numa_topology = cache_claim.numa_topology
+
+        # TODO(Yingxin): Also track spec_obj to make the fast-retry possible.
         self.claim_records.track(cache_claim)
         LOG.debug("Successfully consume from claim %(claim)s, "
                   "the state is changed to %(state)s!",

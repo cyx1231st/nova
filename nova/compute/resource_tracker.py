@@ -119,6 +119,7 @@ class ResourceTracker(object):
     are built and destroyed.
     """
 
+    # NOTE(CHANGE)
     def __init__(self, host, driver, nodename, scheduler_cachemanager):
         self.host = host
         self.driver = driver
@@ -137,10 +138,12 @@ class ResourceTracker(object):
         self.ram_allocation_ratio = CONF.ram_allocation_ratio
         self.cpu_allocation_ratio = CONF.cpu_allocation_ratio
 
+        # NOTE(CHANGE)
         self.scheduler_cachemanager = scheduler_cachemanager
 
     @utils.synchronized(COMPUTE_RESOURCE_SEMAPHORE)
     def instance_claim(self, context, instance_ref, limits=None,
+            # NOTE(CHANGE)
             scheduler_claim=None):
         """Indicate that some resources are needed for an upcoming compute
         instance build operation.
@@ -195,6 +198,7 @@ class ResourceTracker(object):
 
         elevated = context.elevated()
         # persist changes to the compute node:
+        # NOTE(CHANGE)
         self._update(elevated, scheduler_claim=scheduler_claim)
 
         return claim
@@ -320,6 +324,7 @@ class ResourceTracker(object):
 
     @utils.synchronized(COMPUTE_RESOURCE_SEMAPHORE)
     def abort_instance_claim(self, context, instance,
+            # NOTE(CHANGE)
             scheduler_claim=None):
         """Remove usage from the given instance."""
         # flag the instance as deleted to revert the resource usage
@@ -327,6 +332,7 @@ class ResourceTracker(object):
         instance['vm_state'] = vm_states.DELETED
         self._update_usage_from_instance(context, instance)
 
+        # NOTE(CHANGE)
         self._update(context.elevated(),
                      scheduler_claim=scheduler_claim,
                      proceed=False)
@@ -659,6 +665,7 @@ class ResourceTracker(object):
             return True
         return False
 
+    # NOTE(CHANGE)
     def _update(self, context, scheduler_claim=None, proceed=True):
         """Update partial stats locally and populate them to Scheduler."""
         self._write_ext_resources(self.compute_node)
@@ -668,6 +675,7 @@ class ResourceTracker(object):
         self.scheduler_client.update_resource_stats(self.compute_node)
         if self.pci_tracker:
             self.pci_tracker.save(context)
+        # NOTE(CHANGE)
         self.scheduler_cachemanager.update_from_compute(
                 context, self.compute_node,
                 claim=scheduler_claim, proceed=proceed)

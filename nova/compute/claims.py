@@ -75,6 +75,7 @@ class Claim(NopClaim):
     correct decisions with respect to host selection.
     """
 
+    # NOTE(CHANGE)
     def __init__(self, context, instance, tracker, resources, overhead=None,
                  limits=None, scheduler_claim=None):
         super(Claim, self).__init__()
@@ -82,6 +83,7 @@ class Claim(NopClaim):
         self.instance = instance.obj_clone()
         self._numa_topology_loaded = False
         self.tracker = tracker
+        # NOTE(CHANGE)
         self.scheduler_claim = scheduler_claim
 
         if not overhead:
@@ -119,6 +121,7 @@ class Claim(NopClaim):
         been aborted.
         """
         LOG.debug("Aborting claim: %s" % self, instance=self.instance)
+        # NOTE(CHANGE)
         self.tracker.abort_instance_claim(self.context, self.instance,
                 self.scheduler_claim)
 

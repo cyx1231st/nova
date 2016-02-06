@@ -205,11 +205,6 @@ class Service(service.Service):
                 # worker, don't fail here.
                 self.service_ref = objects.Service.get_by_host_and_binary(
                     ctxt, self.host, self.binary)
-        else:
-            self.service_ref.save()
-
-        self.service_ref = objects.Service.get_by_host_and_binary(
-            ctxt, self.host, self.binary)
 
         self.manager.pre_start_hook()
 

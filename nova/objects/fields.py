@@ -688,6 +688,7 @@ class ListOfIntegersField(AutoTypedField):
     AUTO_TYPE = List(fields.Integer())
 
 
+# NOTE(CHANGE): For compatibility
 class ListOfListOfStringsField(AutoTypedField):
     AUTO_TYPE = List(fields.ListOfStringsField())
 

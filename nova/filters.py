@@ -96,6 +96,7 @@ class BaseFilterHandler(loadables.BaseLoader):
                                  for obj in list_objs]
                     full_filter_results.append((cls_name, remaining))
                 else:
+                    # NOTE(CHANGE): Remove verbose logs
                     LOG.debug("Filter %s returned 0 hosts" % cls_name)
                     full_filter_results.append((cls_name, None))
                     break
