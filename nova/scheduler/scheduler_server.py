@@ -17,6 +17,7 @@ from functools import partial
 
 from oslo_log import log as logging
 
+import nova
 from nova import exception
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
@@ -84,11 +85,11 @@ class RemoteScheduler(cache_manager.RemoteManagerBase):
             self.api.send_commit(context, [cache_commit], self.host, self.seed)
         self.increase_seed()
 
-    def reply_claim(self, context, claim, proceed):
+    def reply_claim(self, context, claim, proceed, force=False):
         if not self.is_activated():
             return
         claim_reply = objects.ClaimReply.from_claim(claim, proceed)
-        if claim.origin_host == self.host:
+        if not force and claim.origin_host == self.host:
             cache_update = None
         else:
             cache_update = claim.to_cache_update(proceed)
@@ -147,25 +148,12 @@ class SchedulerServers(cache_manager.CacheManagerBase):
         if not self.host_state:
             self.host_state = objects.HostState.from_primitives(
                 context, compute)
-            self.claim_records.reset(
-                partial(self.host_state.process_claim, apply_claim=False))
+            self.claim_records.reset(self.abort_tracked_claim)
             self.compute_state = self.host_state.obj_clone()
             self.api.notify_schedulers(context)
             LOG.info(_LI("Compute %s is up!") % self.host)
         else:
-            if claim:
-                tracked_claim = self.claim_records.pop(claim.seed)
-                if tracked_claim:
-                    if proceed:
-                        LOG.info(_LI("Compute claim success: %s")
-                                 % tracked_claim)
-                        self.compute_state.process_claim(tracked_claim, True)
-                    else:
-                        LOG.info(_LI("Compute claim failed: %s")
-                                 % tracked_claim)
-                else:
-                    LOG.error(_LE("Unrecognized compute claim: %s") % claim)
-
+            self.abort_tracked_claim(claim)
             cache_update = self.compute_state.update_from_compute(
                     context, compute)
             if cache_update:
@@ -178,3 +166,28 @@ class SchedulerServers(cache_manager.CacheManagerBase):
                         cache_update=cache_update)
                 for remote in self.get_active_managers():
                     remote.send_commit(context, cache_commit)
+
+    def abort_tracked_claim(self, claim):
+        if not claim:
+            return
+        tracked_claim = self.claim_records.pop(claim.seed)
+        if tracked_claim:
+            LOG.info(_LI("Compute claim failed: %s") % claim)
+            self.host_state.process_claim(tracked_claim, apply_claim=False)
+            context = nova.context.get_admin_context()
+            for remote in self.get_active_managers():
+                remote.reply_claim(context, tracked_claim, False, force=True)
+        else:
+            LOG.error(_LE("Unrecognized compute claim: %s") % claim)
+
+    def handle_rt_claim_failure(self, claim, func, *args, **kwargs):
+        try:
+            ret = func(*args, **kwargs)
+            return ret
+        except exception.ComputeResourcesUnavailable as e:
+            self.abort_tracked_claim(claim)
+            raise e
+        except Exception as e:
+            LOG.warn(_LW("Catched an unexpected exception %s, abort claim!") % e)
+            self.abort_tracked_claim(claim)
+            raise e
