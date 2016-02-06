@@ -41,9 +41,11 @@ class APIProxy(cache_manager.APIProxyBase):
             context, commit, self.host, scheduler, seed)
 
 
-class SchedulerServer(cache_manager.RemoteManagerBase):
+class RemoteScheduler(cache_manager.RemoteManagerBase):
     def __init__(self, host, api, manager):
-        super(SchedulerServer, self).__init__(host, api, manager)
+        super(RemoteScheduler, self).__init__(host, api, manager)
+        # TODO(Yingxin): Apply message window to detect and recover lost
+        # claims, then move message_window to RemoteManagerBase.
         self.message_pipe = cache_manager.MessagePipe(
             self._dispatch_commits, True, label=self.host)
 
@@ -102,7 +104,7 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
 
 class SchedulerServers(cache_manager.CacheManagerBase):
     API_PROXY = APIProxy
-    REMOTE_MANAGER = SchedulerServer
+    REMOTE_MANAGER = RemoteScheduler
     SERVICE_NAME = 'nova-scheduler'
 
     def __init__(self, host):

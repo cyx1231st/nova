@@ -37,9 +37,11 @@ class APIProxy(cache_manager.APIProxyBase):
                 context, compute, self.host)
 
 
-class SharedHostState(cache_manager.RemoteManagerBase):
+class RemoteCompute(cache_manager.RemoteManagerBase):
     def __init__(self, host, api, manager):
-        super(SharedHostState, self).__init__(host, api, manager)
+        super(RemoteCompute, self).__init__(host, api, manager)
+        # TODO(Yingxin): Apply message pipe and move the according logics to
+        # cache_manager.RemoteManagerBase
         self.message_window = cache_manager.MessageWindow(
                 label=self.host)
         self.claim_records = cache_manager.ClaimRecords(
@@ -141,6 +143,9 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                 LOG.error(_LE("Claim %s not found, abort abort!") % claim)
 
     def consume_cache(self, spec_obj, limits):
+        # TODO(Yingxin): Refactor code to get rid of conductor service when
+        # send scheduler decisions to SchedulerServers with claim.
+
         if not self.is_activated():
             raise exception.ComputeResourcesUnavailable(reason=
                     "Remote %s is not available!" % self.host)
@@ -169,7 +174,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
 
 class SchedulerClients(cache_manager.CacheManagerBase):
     API_PROXY = APIProxy
-    REMOTE_MANAGER = SharedHostState
+    REMOTE_MANAGER = RemoteCompute
     SERVICE_NAME = 'nova-compute'
 
     def __init__(self, host):

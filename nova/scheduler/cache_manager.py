@@ -32,6 +32,17 @@ class APIProxyBase(object):
     def __init__(self, host):
         self.host = host
         self.servicegroup_api = servicegroup.API()
+    # TODO(Yingxin): Refactor code to get rid of conductor service when send
+    # scheduler decisions to SchedulerServers with claim.
+
+    # TODO(Yingxin): Abstract methods notify_remote(s) and send_messages to
+    # APIProxyBase, so that all the communications between scheduler clients
+    # and servers are sent through APIProxy.
+
+    # TODO(Yingxin): Implement message driver to transmit all the scheduling
+    # messages to remote, the default is oslo_messaging driver. It is better to
+    # provide a mechanism to switch to other message drivers using stand-along
+    # distributed message queue to transmit messages.
 
     def service_is_up(self, service):
         return self.servicegroup_api.service_is_up(service)
@@ -42,7 +53,12 @@ class RemoteManagerBase(object):
     STANDBY = "STANDBY"
     ACTIVE = "ACTIVE"
 
+    # TODO(Yingxin): Improve to a more accurate trancient handling based on
+    # timestamp.
     _TRANCIENT = "TRANCIENT"
+    # TODO(Yingxin): Improve fallenout model to eliminate unecessary refresh
+    # attempts but send important refreshes to remote. However, there seems
+    # still chances that it may make wrong decisions.
     _FALLENOUT = "FALLENOUT"
 
     def __init__(self, host, api, manager):
@@ -130,8 +146,6 @@ class RemoteManagerBase(object):
             self._refresh(context)
 
     def _handle_trancient(self):
-        # TODO(Yingxin): Improve to a more accurate trancient handling based on
-        # timestamp.
         if not self.is_activated():
             self.disable()
             return
