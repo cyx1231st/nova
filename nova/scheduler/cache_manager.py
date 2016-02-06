@@ -20,7 +20,7 @@ import random
 from oslo_log import log as logging
 
 import nova
-from nova.i18n import _LI, _LE, _LW
+from nova.i18n import _, _LI, _LE, _LW
 from nova import objects
 from nova import servicegroup
 from nova import utils
@@ -62,7 +62,7 @@ class RemoteManagerBase(object):
         raise NotImplementedError(
             "RemoteManagerBase._disable not implemented!")
 
-    def _activate(self, item, seed):
+    def _activate(self, **kwargs):
         raise NotImplementedError(
             "RemoteManagerBase._activate not implemented!")
 
@@ -104,16 +104,15 @@ class RemoteManagerBase(object):
         # not available yet. The misuse of this method can cause fake active
         # state.
         if not self.is_activated():
-            LOG.error(_LE("Remote %s is not active, refreshing...")
-                      % self.host)
+            LOG.warn(_LW("Remote %s is not active, refreshing...")
+                     % self.host)
             self.refresh(context)
             return False
         else:
             return True
 
-    def activate(self, item=None, seed=None):
-        # TODO(Yingxin): remove extra arguments
-        self._activate(item, seed)
+    def activate(self, **kwargs):
+        self._activate(**kwargs)
         if self._FALLENOUT in self._side_affects:
             self._side_affects.remove(self._FALLENOUT)
         self.manager.active_remotes[self.host] = self
@@ -131,7 +130,8 @@ class RemoteManagerBase(object):
             self._refresh(context)
 
     def _handle_trancient(self):
-        # TODO(Yingxin): change to timeout and disable
+        # TODO(Yingxin): Improve to a more accurate trancient handling based on
+        # timestamp.
         if not self.is_activated():
             self.disable()
             return
@@ -397,3 +397,54 @@ def build_commit(claim_reply=None, cache_update=None):
     else:
         claim_replies = []
     return {'claim_replies': claim_replies, 'cache_update': cache_update}
+
+
+def merge_commit(base_commit, append_commit):
+    if 'cache_refresh' in append_commit:
+        raise RuntimeError(_("Commit merging does not support "
+                             "refreshing commit %s!") % append_commit)
+
+    append_replies = append_commit.pop('claim_replies')
+    base_commit['claim_replies'].extend(append_replies)
+
+    append_update = append_commit.pop('cache_update')
+    base_update = base_commit['cache_update']
+
+    append_version = append_update['expected_version']
+    base_version = base_update['expected_version']
+    if append_version is None:
+        pass
+    elif base_version is None:
+        base_update['expected_version'] = base_version
+    elif base_version < append_version:
+        base_update['expected_version'] = base_version
+    elif base_version > append_version:
+        append_update, base_update = base_update, append_update
+        base_update['expected_version'] = base_version
+        base_commit['cache_update'] = base_update
+    else:
+        raise RuntimeError(_LE("Detected same expected_versions: %(l)s, %(r)!")
+                           % {'l': base_commit, 'r': append_commit})
+
+    append_incrementals = append_update['incremental_updates']
+    base_incrementals = base_update['incremental_updates']
+    overlap_keys = append_incrementals.keys() & base_incrementals.keys()
+    new_keys = append_incrementals.keys() - overlap_keys
+    for key in overlap_keys:
+        base_incrementals[key] += append_incrementals[key]
+    for key in new_keys:
+        base_incrementals[key] = append_incrementals[key]
+
+    append_overwrites = append_update['overwrite_updates']
+    base_overwrites = base_update['overwrite_updates']
+    for key in append_overwrites.keys():
+        base_overwrites[key] = append_overwrites[key]
+
+    append_specials = append_update['special_updates']
+    base_specials = append_update['special_updates']
+    if 'metrics' in append_specials:
+        base_specials['metrics'] = append_specials['metrics']
+    # TODO(Yingxin) Incremental update pci_stats
+    # TODO(Yingxin) Incremental update numa_topology
+
+    return base_commit

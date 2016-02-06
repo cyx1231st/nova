@@ -70,13 +70,16 @@ class SchedulerServer(cache_manager.RemoteManagerBase):
             self.api.send_commit(context, [cache_commit],
                                  self.host, self.seed)
         else:
-            LOG.info(_LI("Send commit#%(seed)d to %(scheduler)s: "
+            cache_commit = messages[0]
+            for i in range(1, len(messages)):
+                cache_manager.merge_commit(cache_commit, messages[i])
+            LOG.info(_LI("Send %(count)s commit#%(seed)d to %(scheduler)s: "
                          "%(commit)s")
                      % {'scheduler': self.host,
-                        'commit': messages,
-                        'seed': self.seed})
-            # TODO(Yingxin): Merge commits to reduce rpc message size
-            self.api.send_commit(context, messages, self.host, self.seed)
+                        'commit': cache_commit,
+                        'seed': self.seed,
+                        'count': len(messages)})
+            self.api.send_commit(context, [cache_commit], self.host, self.seed)
         self.increase_seed()
 
     def reply_claim(self, context, claim, proceed):

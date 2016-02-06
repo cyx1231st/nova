@@ -46,7 +46,9 @@ class SharedHostState(cache_manager.RemoteManagerBase):
                 label=self.host)
         self.host_state = None
 
-    def _activate(self, cache, seed):
+    def _activate(self, **kwargs):
+        seed = kwargs['seed']
+        cache = kwargs['cache']
         if self.is_activated() and \
                 not self.message_window.try_reset(seed):
             # NOTE(Yingxin): In case multiple caches are coming and they are
@@ -60,8 +62,6 @@ class SharedHostState(cache_manager.RemoteManagerBase):
 
     def _disable(self):
         self.message_window.reset()
-        # TODO(Yingxin): Cannot simply set to None unless scheduler accepts
-        # empty host state.
         self.host_state = None
         self.claim_records.reset()
 
@@ -75,7 +75,7 @@ class SharedHostState(cache_manager.RemoteManagerBase):
 
     def process_commits(self, context, commits, seed):
         if 'cache_refresh' in commits[0]:
-            self.activate(commits[0]['cache_refresh'], seed)
+            self.activate(cache=commits[0]['cache_refresh'], seed=seed)
             return
 
         if not self.expect_active(context):
