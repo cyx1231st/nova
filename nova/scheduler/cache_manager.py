@@ -16,6 +16,8 @@
 import bisect
 from eventlet import queue
 import random
+import sys
+import traceback
 
 from oslo_log import log as logging
 
@@ -365,8 +367,16 @@ class MessagePipe(object):
             msgs.append(self.queue.get())
             for i in range(self.queue.qsize(), 0, -1):
                 msgs.append(self.queue.get_nowait())
-            self.consume_callback(context=self.context,
-                                  messages=msgs)
+            try:
+                self.consume_callback(context=self.context,
+                                      messages=msgs)
+            except Exception as e:
+                trace_info = traceback.format_exception(*sys.exc_info())
+                LOG.error(_LE("MessagePipe %(l)s unexpected exception %(e)s, "
+                              "traceinfo: %(info)s, messages: %(msg)s!") %
+                          {'l': self.label, 'e': e, 'info': trace_info,
+                           'msg': msgs})
+
 
     def activate(self, initial_msg=None):
         self.enabled = True
@@ -418,14 +428,19 @@ def merge_commit(base_commit, append_commit):
         raise RuntimeError(_("Commit merging does not support "
                              "refreshing commit %s!") % append_commit)
 
-    append_replies = append_commit.pop('claim_replies')
+    # NOTE(Yingxin): Do not modify any content in append_commit, or there will
+    # be strange behaviors that are difficult to debug.
+
+    append_replies = append_commit['claim_replies']
     base_commit['claim_replies'].extend(append_replies)
 
-    append_update = append_commit.pop('cache_update')
+    append_update = append_commit['cache_update']
     base_update = base_commit['cache_update']
 
     append_version = append_update['expected_version']
     base_version = base_update['expected_version']
+    is_reversed = False
+
     if append_version is None:
         pass
     elif base_version is None:
@@ -433,17 +448,16 @@ def merge_commit(base_commit, append_commit):
     elif base_version < append_version:
         base_update['expected_version'] = base_version
     elif base_version > append_version:
-        append_update, base_update = base_update, append_update
-        base_update['expected_version'] = base_version
-        base_commit['cache_update'] = base_update
+        is_reversed = True
     else:
         raise RuntimeError(_LE("Detected same expected_versions: %(l)s, %(r)!")
                            % {'l': base_commit, 'r': append_commit})
 
     append_incrementals = append_update['incremental_updates']
     base_incrementals = base_update['incremental_updates']
-    overlap_keys = append_incrementals.keys() & base_incrementals.keys()
-    new_keys = append_incrementals.keys() - overlap_keys
+    append_keys = set(append_incrementals.keys())
+    overlap_keys = append_keys & set(base_incrementals.keys())
+    new_keys = append_keys - overlap_keys
     for key in overlap_keys:
         base_incrementals[key] += append_incrementals[key]
     for key in new_keys:
@@ -451,13 +465,21 @@ def merge_commit(base_commit, append_commit):
 
     append_overwrites = append_update['overwrite_updates']
     base_overwrites = base_update['overwrite_updates']
-    for key in append_overwrites.keys():
+    append_keys = set(append_overwrites.keys())
+    base_keys = set(base_overwrites.keys())
+    overlap_keys = append_keys & base_keys
+    if is_reversed:
+        overwrite_keys = append_keys - overlap_keys
+    else:
+        overwrite_keys = append_keys
+    for key in overwrite_keys:
         base_overwrites[key] = append_overwrites[key]
 
     append_specials = append_update['special_updates']
     base_specials = append_update['special_updates']
     if 'metrics' in append_specials:
-        base_specials['metrics'] = append_specials['metrics']
+        if not is_reversed or 'metrics' not in base_specials:
+            base_specials['metrics'] = append_specials['metrics']
     # TODO(Yingxin) Incremental update pci_stats
     # TODO(Yingxin) Incremental update numa_topology
 

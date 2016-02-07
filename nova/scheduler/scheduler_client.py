@@ -76,6 +76,8 @@ class RemoteCompute(cache_manager.RemoteManagerBase):
                  % {'host': self.host, 'state': self})
 
     def process_commits(self, context, commits, seed):
+        # TODO(Yingxin): Overwrite_updates can only handled in sequence, so
+        # there should be a way to sort this kind of updates by seed.
         if 'cache_refresh' in commits[0]:
             self.activate(cache=commits[0]['cache_refresh'], seed=seed)
             return

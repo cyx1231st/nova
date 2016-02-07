@@ -2016,7 +2016,8 @@ class ComputeManager(manager.Manager):
             self.scheduler_cachemanager.claim(context, claim, limits)
             rt = self._get_resource_tracker(node)
             # NOTE(CHANGE)
-            with rt.instance_claim(context, instance, limits, claim):
+            with self.scheduler_cachemanager.handle_rt_claim_failure(
+                claim, rt.instance_claim, context, instance, limits, claim):
                 # NOTE(russellb) It's important that this validation be done
                 # *after* the resource tracker instance claim, as that is where
                 # the host is set on the instance.

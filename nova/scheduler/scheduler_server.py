@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
 from functools import partial
 
 from oslo_log import log as logging
@@ -73,7 +74,9 @@ class RemoteScheduler(cache_manager.RemoteManagerBase):
             self.api.send_commit(context, [cache_commit],
                                  self.host, self.seed)
         else:
-            cache_commit = messages[0]
+            # NOTE(Yingxin): Do not modify any messages, they are shared
+            # between RemoteScheduler objects!
+            cache_commit = copy.deepcopy(messages[0])
             for i in range(1, len(messages)):
                 cache_manager.merge_commit(cache_commit, messages[i])
             LOG.info(_LI("Send %(count)s commit#%(seed)d to %(scheduler)s: "
