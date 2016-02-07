@@ -115,7 +115,7 @@ class RemoteCompute(cache_manager.RemoteManagerBase):
                                  {'instance': tracked_claim.instance_uuid,
                                   'host': tracked_claim.target_host})
                     else:
-                        LOG.error(_LE("Unrecognized remote reply %(claim) "
+                        LOG.error(_LE("Unrecognized remote reply %(claim)s "
                                       "for instance %(id)s!") %
                                       {'claim': reply,
                                        'id': reply.instance_uuid})
