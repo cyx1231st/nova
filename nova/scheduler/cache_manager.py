@@ -444,9 +444,9 @@ def merge_commit(base_commit, append_commit):
     if append_version is None:
         pass
     elif base_version is None:
-        base_update['expected_version'] = base_version
+        base_update['expected_version'] = append_version
     elif base_version < append_version:
-        base_update['expected_version'] = base_version
+        base_update['expected_version'] = append_version
     elif base_version > append_version:
         is_reversed = True
     else:

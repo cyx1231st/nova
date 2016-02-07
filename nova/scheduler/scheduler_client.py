@@ -97,10 +97,11 @@ class RemoteCompute(cache_manager.RemoteManagerBase):
             for reply in claim_replies:
                 if reply.origin_host != self.manager.host:
                     LOG.info(_LI("receive %(instance)s to %(host)s from "
-                                 "%(scheduler)s") %
+                                 "%(scheduler)s, proceed: %(p)s") %
                              {'instance': reply.instance_uuid,
                               'host': reply.target_host,
-                              'scheduler': reply.origin_host})
+                              'scheduler': reply.origin_host,
+                              'p': reply.proceed})
                 else:
                     tracked_claim = self.claim_records.pop(reply.seed)
                     proceed = reply.proceed
@@ -115,10 +116,10 @@ class RemoteCompute(cache_manager.RemoteManagerBase):
                                  {'instance': tracked_claim.instance_uuid,
                                   'host': tracked_claim.target_host})
                     else:
-                        LOG.error(_LE("Unrecognized remote reply %(claim)s "
-                                      "for instance %(id)s!") %
-                                      {'claim': reply,
-                                       'id': reply.instance_uuid})
+                        LOG.warn(_LW("Extra remote reply %(claim)s "
+                                     "for instance %(id)s!") %
+                                     {'claim': reply,
+                                      'id': reply.instance_uuid})
 
             success = True
             cache_update = commit['cache_update']
@@ -128,7 +129,9 @@ class RemoteCompute(cache_manager.RemoteManagerBase):
                          {'host': self.host, 'update': cache_update})
                 LOG.debug("Updated state: %s" % self)
             if not success:
-                LOG.info(_LI("HostState version doesn't match."))
+                LOG.warn(_LW("HostState version doesn't match: update %(u),"
+                             " actually %(s)!")
+                         % {'u': cache_update, 's': self.host_state})
 
     def abort_claims(self, claims):
         if not self.is_activated():
