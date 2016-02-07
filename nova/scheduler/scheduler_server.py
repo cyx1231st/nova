@@ -14,7 +14,6 @@
 #    under the License.
 
 import copy
-from functools import partial
 
 from oslo_log import log as logging
 
@@ -181,7 +180,8 @@ class SchedulerServers(cache_manager.CacheManagerBase):
             for remote in self.get_active_managers():
                 remote.reply_claim(context, tracked_claim, False, force=True)
         else:
-            LOG.error(_LE("Unrecognized compute claim: %s") % claim)
+            LOG.warn(_LW("Unrecognized compute claim: %s (May be caused by "
+                         "resource tracker abort)") % claim)
 
     def handle_rt_claim_failure(self, claim, func, *args, **kwargs):
         try:
