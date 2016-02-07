@@ -6687,7 +6687,7 @@ class ComputeManager(manager.Manager):
     def report_host_state(self, context, compute_node, scheduler):
         return self.scheduler_cachemanager.notified_by_remote(
                 context, scheduler)
-        
+
     @periodic_task.periodic_task
     def periodically_refresh_scheduler_remotes(self, context):
         self.scheduler_cachemanager.periodically_refresh_remotes(context)

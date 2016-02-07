@@ -41,7 +41,7 @@ class Scheduler(object):
         self.servicegroup_api = servicegroup.API()
         # NOTE(CHANGE): For compatibility
         self.cache_manager = None
-    
+
     # NOTE(CHANGE): For compatibility
     def load_cache_manager(self, cache_manager):
         self.cache_manager = cache_manager

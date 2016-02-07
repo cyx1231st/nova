@@ -66,7 +66,7 @@ class HostState(base.NovaObject):
         'cpu_allocation_ratio': fields.FloatField(),
         'ram_allocation_ratio': fields.FloatField(),
     }
-    
+
     def _from_compute(self, compute):
         self.total_usable_ram_mb = compute.memory_mb
         self.free_ram_mb = compute.free_ram_mb

@@ -369,7 +369,7 @@ class ComputeTaskManager(base.Base):
                     context, instance.uuid, 'build_instances', updates,
                     exc, request_spec)
             return
-        
+
         # NOTE(CHANGE)
         for (instance, host, claim) in itertools.izip(
                     instances, hosts, claims):

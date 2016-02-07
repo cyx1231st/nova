@@ -65,7 +65,7 @@ class RemoteScheduler(cache_manager.RemoteManagerBase):
         if not self.manager.host_state:
             LOG.error(_LE("Host state is not available, abort dispatching!"))
             self.disable()
-        
+
         if messages[0] == "refresh":
             LOG.info(_LI("Scheduler %(host)s is refreshed by %(seed)d!")
                      % {'host': self.host, 'seed': self.seed})

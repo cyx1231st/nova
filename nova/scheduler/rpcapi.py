@@ -135,7 +135,8 @@ class SchedulerAPI(object):
         return cctxt.cast(ctxt, 'sync_instance_info', host_name=host_name,
                           instance_uuids=instance_uuids)
 
-    # NOTE(CHANGE): For compatibility
+    # NOTE(CHANGE)
+    # TODO(Yingxin): Bump version
     def notify_schedulers(self, ctxt, host_name, scheduler=None):
         if scheduler is not None:
             cctxt = self.client.prepare(version='4.0', server=scheduler)

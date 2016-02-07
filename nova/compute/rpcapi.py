@@ -997,6 +997,7 @@ class ComputeAPI(object):
         return cctxt.cast(ctxt, "trigger_crash_dump", instance=instance)
 
     # NOTE(CHANGE)
+    # TODO(Yingxin): Bump version
     def report_host_state(self, ctxt, compute, scheduler):
         version = '4.0'
         cctxt = self.client.prepare(server=compute,
