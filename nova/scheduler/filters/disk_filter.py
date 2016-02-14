@@ -37,14 +37,17 @@ class DiskFilter(filters.BaseHostFilter):
                                   spec_obj.ephemeral_gb) +
                           spec_obj.swap)
 
-        free_disk_mb = host_state.free_disk_mb
+        # free_disk_mb = host_state.free_disk_mb
         total_usable_disk_mb = host_state.total_usable_disk_gb * 1024
 
         disk_allocation_ratio = self._get_disk_allocation_ratio(
             host_state, spec_obj)
 
         disk_mb_limit = total_usable_disk_mb * disk_allocation_ratio
-        used_disk_mb = total_usable_disk_mb - free_disk_mb
+        # NOTE(CHANGE): according to compute resource consumption, it is
+        # reasonable to use host_state.disk_mb_used instead of:
+        # used_disk_mb = total_usable_disk_mb - free_disk_mb
+        used_disk_mb = host_state.disk_mb_used
         usable_disk_mb = disk_mb_limit - used_disk_mb
 
         if not usable_disk_mb >= requested_disk:

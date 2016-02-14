@@ -38,6 +38,8 @@ def register_all():
     __import__('nova.objects.flavor')
     __import__('nova.objects.floating_ip')
     __import__('nova.objects.host_mapping')
+    # NOTE(CHANGE)
+    __import__('nova.objects.host_state')
     __import__('nova.objects.hv_spec')
     __import__('nova.objects.image_meta')
     __import__('nova.objects.instance')

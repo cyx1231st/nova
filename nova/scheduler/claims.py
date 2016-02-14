@@ -35,7 +35,7 @@ class Claim(claims.ClaimBase):
     """
 
     def __init__(self, spec_obj, host_state, limits=None):
-        self.spec_obj = spec_obj.obj_clone()
+        self.spec_obj = spec_obj
         self.host_state = host_state
         self.instance_cells = None
         super(Claim, self).__init__(limits)
@@ -56,8 +56,11 @@ class Claim(claims.ClaimBase):
         self._resources.used_memory_mb = self._resources.total_memory_mb - \
                                    self.host_state.free_ram_mb
         self._resources.total_disk_gb = self.host_state.total_usable_disk_gb
-        self._resources.used_disk_gb = self._resources.total_disk_gb - \
-                                 self.host_state.free_disk_mb / 1024
+        # self._resources.used_disk_gb = self._resources.total_disk_gb - \
+        #                          self.host_state.free_disk_mb / 1024
+        # NOTE(CHANGE): Compute node style resource consumption
+        self._resources.used_disk_gb = self.host_state.disk_mb_used / 1024
+
         self._resources.total_vcpus = self.host_state.vcpus_total
         self._resources.used_vcpus = self.host_state.vcpus_used
         self._resources.host_topology, _fmt = \
@@ -76,3 +79,17 @@ class Claim(claims.ClaimBase):
                     pci_requests,
                     self.instance_cells):
                 return _('Claim pci failed.')
+
+
+# NOTE(CHANGE): Add remote claim to be used by scheduler servers
+class RemoteClaim(Claim):
+    def __init__(self, claim, host_state, limits=None):
+        self.claim = claim
+        super(RemoteClaim, self).__init__(None, host_state, limits)
+
+    def _prepare_request(self):
+        self._request.disk_gb = self.claim.disk_mb_used / 1024
+        self._request.memory_mb = - self.claim.free_ram_mb
+        self._request.vcpus = self.claim.vcpus_used
+        self._request.numa_topology = self.claim.numa_topology
+        self._request.pci_requests = self.claim.pci_requests

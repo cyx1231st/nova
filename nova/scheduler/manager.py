@@ -31,14 +31,20 @@ from nova import exception
 from nova.i18n import _, _LW
 from nova import manager
 from nova import objects
-from nova import quota
+from nova.scheduler import scheduler_client
+from nova.scheduler import shared_state_manager
+# NOTE(CHANGE): It might be a bug that quota directly connect to db instead of
+# using conductor
+# from nova import quota
 
 
 LOG = logging.getLogger(__name__)
 
 CONF = nova.conf.CONF
 
-QUOTAS = quota.QUOTAS
+# NOTE(CHANGE): It might be a bug that quota directly connect to db instead of
+# using conductor
+# QUOTAS = quota.QUOTAS
 
 
 class SchedulerManager(manager.Manager):
@@ -76,14 +82,34 @@ class SchedulerManager(manager.Manager):
         super(SchedulerManager, self).__init__(service_name='scheduler',
                                                *args, **kwargs)
 
-    @periodic_task.periodic_task
-    def _expire_reservations(self, context):
-        QUOTAS.expire(context)
+        # NOTE(CHANGE):
+        if isinstance(self.driver.host_manager,
+                      shared_state_manager.SharedHostManager):
+            self.cache_manager = scheduler_client.SchedulerClients(self.host)
+            self.driver.load_cache_manager(self.cache_manager)
+            self.driver.host_manager.load_cache_manager(self.cache_manager)
+        else:
+            self.cache_manager = None
+
+    # NOTE(CHANGE): It might be a bug that quota directly connect to db
+    # instead of using conductor
+    # @periodic_task.periodic_task
+    # def _expire_reservations(self, context):
+    #     QUOTAS.expire(context)
 
     @periodic_task.periodic_task(spacing=CONF.scheduler_driver_task_period,
                                  run_immediately=True)
     def _run_periodic_tasks(self, context):
         self.driver.run_periodic_tasks(context)
+        # NOTE(CHANGE)
+        if self.cache_manager:
+            self.cache_manager.periodically_refresh_remotes(context)
+
+    # NOTE(CHANGE)
+    def pre_start_hook(self):
+        if self.cache_manager:
+            self.cache_manager.periodically_refresh_remotes(
+                    nova.context.get_admin_context())
 
     @messaging.expected_exceptions(exception.NoValidHost)
     def select_destinations(self, ctxt,
@@ -101,8 +127,9 @@ class SchedulerManager(manager.Manager):
             spec_obj = objects.RequestSpec.from_primitives(ctxt,
                                                            request_spec,
                                                            filter_properties)
-        dests = self.driver.select_destinations(ctxt, spec_obj)
-        return jsonutils.to_primitive(dests)
+        # NOTE(CHANGE)
+        dests, claims = self.driver.select_destinations(ctxt, spec_obj)
+        return jsonutils.to_primitive(dests), claims
 
     def update_aggregates(self, ctxt, aggregates):
         """Updates HostManager internal aggregates information.
@@ -143,3 +170,14 @@ class SchedulerManager(manager.Manager):
         """
         self.driver.host_manager.sync_instance_info(context, host_name,
                                                     instance_uuids)
+
+    # NOTE(CHANGE)
+    # TODO(Yingxin): Stop sending messages after a scheduler is detected not
+    # using SharedStateManager
+    def notified_by_remote(self, context, host_name):
+        if self.cache_manager:
+            self.cache_manager.notified_by_remote(context, host_name)
+
+    def receive_commit(self, context, commit, compute, seed):
+        if self.cache_manager:
+            self.cache_manager.receive_commit(context, commit, compute, seed)

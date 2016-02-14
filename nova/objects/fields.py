@@ -898,6 +898,11 @@ class ListOfIntegersField(AutoTypedField):
     AUTO_TYPE = List(fields.Integer())
 
 
+# NOTE(CHANGE)
+class ListOfListOfStringsField(AutoTypedField):
+    AUTO_TYPE = List(fields.ListOfStringsField())
+
+
 class NonNegativeFloatField(AutoTypedField):
     AUTO_TYPE = NonNegativeFloat()
 

@@ -388,7 +388,8 @@ class ComputeTaskManager(base.Base):
                 filter_properties, instances[0].uuid)
             request_spec = scheduler_utils.build_request_spec(
                     context, image, instances)
-            hosts = self._schedule_instances(
+            # NOTE(CHANGE)
+            hosts, claims = self._schedule_instances(
                     context, request_spec, filter_properties)
         except Exception as exc:
             updates = {'vm_state': vm_states.ERROR, 'task_state': None}
@@ -400,7 +401,7 @@ class ComputeTaskManager(base.Base):
                     context, instance, requested_networks)
             return
 
-        for (instance, host) in six.moves.zip(instances, hosts):
+        for (instance, host, claim) in six.moves.zip(instances, hosts, claims):
             try:
                 instance.refresh()
             except (exception.InstanceNotFound,
@@ -424,7 +425,9 @@ class ComputeTaskManager(base.Base):
                     requested_networks=requested_networks,
                     security_groups=security_groups,
                     block_device_mapping=bdms, node=host['nodename'],
-                    limits=host['limits'])
+                    limits=host['limits'],
+                    # NOTE(CHANGE)
+                    claim = claim)
 
     def _schedule_instances(self, context, request_spec, filter_properties):
         scheduler_utils.setup_instance_group(context, request_spec,
@@ -433,8 +436,10 @@ class ComputeTaskManager(base.Base):
         # scheduler.utils methods to directly use the RequestSpec object
         spec_obj = objects.RequestSpec.from_primitives(
             context, request_spec, filter_properties)
-        hosts = self.scheduler_client.select_destinations(context, spec_obj)
-        return hosts
+        # NOTE(CHANGE)
+        hosts, claims = \
+                self.scheduler_client.select_destinations(context, spec_obj)
+        return hosts, claims
 
     def unshelve_instance(self, context, instance, request_spec=None):
         sys_meta = instance.system_metadata
@@ -496,7 +501,10 @@ class ComputeTaskManager(base.Base):
                             to_legacy_request_spec_dict()
                     scheduler_utils.populate_retry(filter_properties,
                                                    instance.uuid)
-                    hosts = self._schedule_instances(
+                    request_spec = scheduler_utils.build_request_spec(
+                            context, image, [instance])
+                    # NOTE(CHANGE)
+                    hosts, claims = self._schedule_instances(
                             context, request_spec, filter_properties)
                     host_state = hosts[0]
                     scheduler_utils.populate_filter_properties(
@@ -558,7 +566,8 @@ class ComputeTaskManager(base.Base):
                         to_legacy_filter_properties_dict()
                     request_spec = request_spec.to_legacy_request_spec_dict()
                 try:
-                    hosts = self._schedule_instances(
+                    # NOTE(CHANGE)
+                    hosts, claims = self._schedule_instances(
                             context, request_spec, filter_properties)
                     host_dict = hosts.pop(0)
                     host, node, limits = (host_dict['host'],

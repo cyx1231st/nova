@@ -57,12 +57,15 @@ class Claim(claims.ClaimBase):
     correct decisions with respect to host selection.
     """
 
+    # NOTE(CHANGE)
     def __init__(self, context, instance, tracker, resources, overhead=None,
-                 limits=None):
+                 limits=None, scheduler_claim=None):
         self.tracker = tracker
         self.resources = resources
         self.overhead = overhead or {'memory_mb': 0}
         self.context = context
+        # NOTE(CHANGE)
+        self.scheduler_claim = scheduler_claim
 
         super(Claim, self).__init__(limits=limits, instance=instance)
 
@@ -107,7 +110,9 @@ class Claim(claims.ClaimBase):
             self.instance, limits)
 
     def abort(self):
-        self.tracker.abort_instance_claim(self.context, self.instance)
+        # NOTE(CHANGE)
+        self.tracker.abort_instance_claim(self.context, self.instance,
+                self.scheduler_claim)
 
 
 class MoveClaim(Claim):

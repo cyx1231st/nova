@@ -65,6 +65,12 @@ class Scheduler(object):
                           "scheduler_host_manager = %(conf)s."),
                         {'conf': CONF.scheduler_host_manager})
         self.servicegroup_api = servicegroup.API()
+        # NOTE(CHANGE)
+        self.cache_manager = None
+
+    # NOTE(CHANGE)
+    def load_cache_manager(self, cache_manager):
+        self.cache_manager = cache_manager
 
     def run_periodic_tasks(self, context):
         """Manager calls this so drivers can perform periodic tasks."""
@@ -85,4 +91,5 @@ class Scheduler(object):
         :return: A list of dicts with 'host', 'nodename' and 'limits' as keys
             that satisfies the request_spec and filter_properties.
         """
-        return []
+        # NOTE(CHANGE)
+        return [], []

@@ -90,6 +90,7 @@ from nova import paths
 from nova import rpc
 from nova import safe_utils
 from nova.scheduler import client as scheduler_client
+from nova.scheduler import scheduler_server
 from nova import utils
 from nova.virt import block_device as driver_block_device
 from nova.virt import configdrive
@@ -721,6 +722,10 @@ class ComputeManager(manager.Manager):
         super(ComputeManager, self).__init__(service_name="compute",
                                              *args, **kwargs)
 
+        # NOTE(CHANGE)
+        self.scheduler_cachemanager = \
+                scheduler_server.SchedulerServers(self.host)
+
         # NOTE(russellb) Load the driver last.  It may call back into the
         # compute manager via the virtapi, so we want it to be fully
         # initialized before that happens.
@@ -741,9 +746,11 @@ class ComputeManager(manager.Manager):
                         _("%s is not a valid node managed by this "
                           "compute host.") % nodename)
 
+            # NOTE(CHANGE)
             rt = resource_tracker.ResourceTracker(self.host,
                                                   self.driver,
-                                                  nodename)
+                                                  nodename,
+                                                  self.scheduler_cachemanager)
             self._resource_tracker_dict[nodename] = rt
         return rt
 
@@ -1862,7 +1869,8 @@ class ComputeManager(manager.Manager):
                      filter_properties, admin_password=None,
                      injected_files=None, requested_networks=None,
                      security_groups=None, block_device_mapping=None,
-                     node=None, limits=None):
+                     # NOTE(CHANGE)
+                     node=None, limits=None, claim=None):
 
         @utils.synchronized(instance.uuid)
         def _locked_do_build_and_run_instance(*args, **kwargs):
@@ -1876,11 +1884,13 @@ class ComputeManager(manager.Manager):
         # NOTE(danms): We spawn here to return the RPC worker thread back to
         # the pool. Since what follows could take a really long time, we don't
         # want to tie up RPC workers.
+        # NOTE(CHANGE)
+        LOG.info(_LI("Received claim %s") % claim)
         utils.spawn_n(_locked_do_build_and_run_instance,
                       context, instance, image, request_spec,
                       filter_properties, admin_password, injected_files,
                       requested_networks, security_groups,
-                      block_device_mapping, node, limits)
+                      block_device_mapping, node, limits, claim)
 
     @hooks.add_hook('build_instance')
     @wrap_exception()
@@ -1890,7 +1900,8 @@ class ComputeManager(manager.Manager):
     def _do_build_and_run_instance(self, context, instance, image,
             request_spec, filter_properties, admin_password, injected_files,
             requested_networks, security_groups, block_device_mapping,
-            node=None, limits=None):
+            # NOTE(CHANGE)
+            node=None, limits=None, claim=None):
 
         try:
             LOG.debug('Starting instance...', context=context,
@@ -1923,7 +1934,8 @@ class ComputeManager(manager.Manager):
                 self._build_and_run_instance(context, instance, image,
                         decoded_files, admin_password, requested_networks,
                         security_groups, block_device_mapping, node, limits,
-                        filter_properties)
+                        # NOTE(CHANGE)
+                        filter_properties, claim)
             LOG.info(_LI('Took %0.2f seconds to build instance.'),
                      timer.elapsed(), instance=instance)
             return build_results.ACTIVE
@@ -2027,16 +2039,21 @@ class ComputeManager(manager.Manager):
                     return True
         return False
 
+    # NOTE(CHANGE)
     def _build_and_run_instance(self, context, instance, image, injected_files,
             admin_password, requested_networks, security_groups,
-            block_device_mapping, node, limits, filter_properties):
+            block_device_mapping, node, limits, filter_properties, claim):
 
         image_name = image.get('name')
         self._notify_about_instance_usage(context, instance, 'create.start',
                 extra_usage_info={'image_name': image_name})
         try:
+            # NOTE(CHANGE)
+            self.scheduler_cachemanager.claim(context, claim, limits)
             rt = self._get_resource_tracker(node)
-            with rt.instance_claim(context, instance, limits):
+            # NOTE(CHANGE)
+            with self.scheduler_cachemanager.handle_rt_claim_failure(
+                claim, rt.instance_claim, context, instance, limits, claim):
                 # NOTE(russellb) It's important that this validation be done
                 # *after* the resource tracker instance claim, as that is where
                 # the host is set on the instance.
@@ -6866,3 +6883,13 @@ class ComputeManager(manager.Manager):
                               error, instance=instance)
         image_meta = objects.ImageMeta.from_instance(instance)
         self.driver.unquiesce(context, instance, image_meta)
+
+    # NOTE(CHANGE)
+    @wrap_exception()
+    def report_host_state(self, context, compute_node, scheduler):
+        return self.scheduler_cachemanager.notified_by_remote(
+                context, scheduler)
+
+    @periodic_task.periodic_task
+    def periodically_refresh_scheduler_remotes(self, context):
+        self.scheduler_cachemanager.periodically_refresh_remotes(context)

@@ -83,3 +83,11 @@ class SchedulerQueryClient(object):
         """
         self.scheduler_rpcapi.sync_instance_info(context, host_name,
                                                  instance_uuids)
+
+    # NOTE(CHANGE)
+    def notify_schedulers(self, context, host_name, scheduler=None):
+        self.scheduler_rpcapi.notify_schedulers(context, host_name, scheduler)
+
+    def send_commit(self, context, commit, compute, scheduler, seed):
+        self.scheduler_rpcapi.send_commit(
+                context, commit, compute, scheduler, seed)

@@ -144,3 +144,17 @@ class SchedulerAPI(object):
         cctxt = self.client.prepare(version='4.2', fanout=True)
         return cctxt.cast(ctxt, 'sync_instance_info', host_name=host_name,
                           instance_uuids=instance_uuids)
+
+    # NOTE(CHANGE)
+    # TODO(Yingxin): Bump version
+    def notify_schedulers(self, ctxt, host_name, scheduler=None):
+        if scheduler is not None:
+            cctxt = self.client.prepare(version='4.0', server=scheduler)
+        else:
+            cctxt = self.client.prepare(version='4.0', fanout=True)
+        return cctxt.cast(ctxt, 'notified_by_remote', host_name=host_name)
+
+    def send_commit(self, ctxt, commit, compute, scheduler, seed):
+        cctxt = self.client.prepare(version='4.0', server=scheduler)
+        cctxt.cast(ctxt, 'receive_commit',
+                   commit=commit, compute=compute, seed=seed)

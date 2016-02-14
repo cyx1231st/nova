@@ -246,7 +246,9 @@ class HostState(object):
 
         # Consume resources
         self.free_ram_mb -= claim.memory_mb
-        self.free_disk_mb -= claim.disk_gb * 1024
+        # NOTE(CHANGE): Compute node style resource consumption
+        # self.free_disk_mb -= claim.disk_gb * 1024
+        self.disk_mb_used += claim.disk_gb * 1024
         self.vcpus_used += claim.vcpus
 
         # Track number of instances on host
@@ -266,7 +268,8 @@ class HostState(object):
         # and when consume_from_request() is run, we can safely say that there
         # is always an IO operation because we want to move the instance
         self.num_io_ops += 1
-        return claim
+        # NOTE(CHANGE)
+        return None
 
     def __repr__(self):
         return ("(%(host)s, %(node)s) ram: %(free_ram)sMB "
@@ -649,7 +652,8 @@ class HostManager(object):
                              "Re-created its InstanceList."), host_name)
                 return
             host_info["updated"] = True
-            LOG.info(_LI("Successfully synced instances from host '%s'."),
+            # NOTE(CHANGE): Remove verbose logs
+            LOG.debug("Successfully synced instances from host '%s'." %
                      host_name)
         else:
             self._recreate_instance_info(context, host_name)
