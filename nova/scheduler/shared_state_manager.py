@@ -17,9 +17,13 @@
 Manage shared cache in the current zone.
 """
 
+from oslo_log import log as logging
 
 from nova.pci import stats as pci_stats
 from nova.scheduler import host_manager
+
+
+LOG = logging.getLogger(__name__)
 
 
 class SharedHostState(host_manager.HostState):
@@ -61,6 +65,7 @@ class SharedHostManager(host_manager.HostManager):
         compute_filter = self.filter_obj_map.pop('ComputeFilter', None)
         if compute_filter and compute_filter in self.default_filters:
             self.default_filters.remove(compute_filter)
+        LOG.info("Shared host manager is online!")
 
     def load_cache_manager(self, cache_manager):
         self.cache_manager = cache_manager

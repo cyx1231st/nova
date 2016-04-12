@@ -572,7 +572,9 @@ class HostManager(object):
             inst_dict = host_info["instances"]
         else:
             # Host is running old version, or updates aren't flowing.
+            LOG.warn("read instance list..")
             inst_list = objects.InstanceList.get_by_host(context, host_name)
+            LOG.warn("read instance done")
             inst_dict = {instance.uuid: instance
                          for instance in inst_list.objects}
         return inst_dict

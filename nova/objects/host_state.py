@@ -66,6 +66,7 @@ class HostState(base.NovaObject):
         'metrics': fields.ObjectField('MonitorMetricList'),
         'cpu_allocation_ratio': fields.FloatField(),
         'ram_allocation_ratio': fields.FloatField(),
+        'disk_allocation_ratio': fields.FloatField(),
     }
 
     def _from_compute(self, compute):
@@ -110,6 +111,7 @@ class HostState(base.NovaObject):
 
         self.cpu_allocation_ratio = compute.cpu_allocation_ratio
         self.ram_allocation_ratio = compute.ram_allocation_ratio
+        self.disk_allocation_ratio = compute.disk_allocation_ratio
 
     @classmethod
     def from_primitives(cls, context, compute, version=None):
@@ -139,6 +141,7 @@ class HostState(base.NovaObject):
                         'supported_instances',
                         'cpu_allocation_ratio',
                         'ram_allocation_ratio',
+                        'disk_allocation_ratio',
                         'numa_topology',
                         }
 
