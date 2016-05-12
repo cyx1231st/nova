@@ -2048,12 +2048,9 @@ class ComputeManager(manager.Manager):
         self._notify_about_instance_usage(context, instance, 'create.start',
                 extra_usage_info={'image_name': image_name})
         try:
-            # NOTE(CHANGE)
-            self.scheduler_cachemanager.claim(context, claim, limits)
             rt = self._get_resource_tracker(node)
             # NOTE(CHANGE)
-            with self.scheduler_cachemanager.handle_rt_claim_failure(
-                claim, rt.instance_claim, context, instance, limits, claim):
+            with rt.instance_claim(context, instance, limits, claim):
                 # NOTE(russellb) It's important that this validation be done
                 # *after* the resource tracker instance claim, as that is where
                 # the host is set on the instance.

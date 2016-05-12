@@ -17,12 +17,10 @@ import copy
 
 from oslo_log import log as logging
 
-import nova
 from nova import exception
 from nova.i18n import _LI, _LE, _LW
 from nova import objects
 from nova.scheduler import cache_manager
-from nova.scheduler import claims
 from nova.scheduler import client as scheduler_client
 
 LOG = logging.getLogger(__name__)
@@ -42,6 +40,7 @@ class APIProxy(cache_manager.APIProxyBase):
             context, commit, self.host, scheduler, seed)
 
 
+# TODO: Get rid of this class to make compute node side stateless
 class RemoteScheduler(cache_manager.RemoteManagerBase):
     def __init__(self, host, api, manager):
         super(RemoteScheduler, self).__init__(host, api, manager)
@@ -113,92 +112,82 @@ class SchedulerServers(cache_manager.CacheManagerBase):
     def __init__(self, host):
         super(SchedulerServers, self).__init__(host)
         self.host_state = None
-        self.compute_state = None
-        self.claim_records = cache_manager.ClaimRecords()
+
+    # This is also called periodical from resource tracker to sync the
+    # host_state from scheduler.
+    def update_from_compute(self, context, compute, claim, proceed):
+        if not self.host_state:
+            self.host_state = objects.HostState.from_primitives(
+                context, compute)
+            # Force update schedulers
+            self.api.notify_schedulers(context)
+            LOG.info(_LI("Compute %s is up!") % self.host)
+        else:
+            if claim and proceed:
+                # NOTE(Yingxin): It should be guaranteed to produce no
+                # cache_update if this condition is put after
+                # update_from_compute()
+                return
+
+            cache_update = self.host_state.update_from_compute(context,
+                    compute)
+            if cache_update:
+                if claim and not proceed:
+                    LOG.info(_LI("Instance build aborted, send reversed "
+                                 "update. Related claim: %s") % claim)
+                LOG.info(_LI("Host state update: %s") % cache_update)
+                cache_commit = cache_manager.build_commit(
+                        cache_update=cache_update)
+                # TODO: fanout
+                for remote in self.get_active_managers():
+                    remote.send_commit(context, cache_commit)
 
     def _do_periodical(self):
-        if self.host_state:
-            self.claim_records.timeout()
-            LOG.info(_LI("Report cache: %s") % self.host_state)
+        LOG.info(_LI("Scheduler host state: %s") % self.host_state)
 
-    def claim(self, context, claim, limits):
+    def _accept_claim(self, context, claim):
         if not claim:
+            # Decision from a legacy filter scheduler
+            return
+        if claim.seed == -1:
+            raise RuntimeError("This claim reply has been sent! %s" % claim)
+        self.host_state.process_claim(claim, True)
+        # TODO: fanout
+        for remote in self.get_active_managers():
+            remote.reply_claim(context, claim, True)
+        claim.seed = -1
+
+    def _reject_claim(self, context, claim):
+        if not claim:
+            # Decision from a legacy filter scheduler
             return
         if not self.host_state:
             LOG.warn(_LW("Host state is not ready, ignore claim: %s")
                      % claim)
             return
+        if claim.seed == -1:
+            raise RuntimeError("This claim reply has been sent! %s" % claim)
         remote_obj = self._get_remote(claim.origin_host, "claim")
         remote_obj.expect_active(context)
-
-        try:
-            claims.RemoteClaim(claim, self.host_state, limits)
-        except exception.ComputeResourcesUnavailable as e:
-            LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
-                     % {'scheduler': claim.origin_host, 'claim': claim})
-            remote_obj.reply_claim(context, claim, False)
-            raise e
-
-        LOG.info(_LI("Success scheduler %(scheduler)s claim: %(claim)s!")
+        LOG.info(_LI("Fail scheduler %(scheduler)s claim: %(claim)s!")
                  % {'scheduler': claim.origin_host, 'claim': claim})
-        self.host_state.process_claim(claim, True)
-        self.claim_records.track(claim)
-        for remote in self.get_active_managers():
-            remote.reply_claim(context, claim, True)
-
-    def update_from_compute(self, context, compute, claim, proceed):
-        if not self.host_state:
-            self.host_state = objects.HostState.from_primitives(
-                context, compute)
-            self.claim_records.reset(self.abort_tracked_claim)
-            self.compute_state = self.host_state.obj_clone()
-            self.api.notify_schedulers(context)
-            LOG.info(_LI("Compute %s is up!") % self.host)
-        else:
-            if claim:
-                if not proceed:
-                    claim = self.abort_tracked_claim(claim)
-                else:
-                    claim = self.claim_records.pop(claim.seed)
-                    self.compute_state.process_claim(claim,
-                                                     apply_claim=True)
-            cache_update = self.compute_state.update_from_compute(
-                    context, compute)
-            if cache_update:
-                if claim:
-                    LOG.warn(_LW("Extra update after claim %s is synced!")
-                             % claim)
-                LOG.info(_LI("Host state update: %s") % cache_update)
-                self.host_state.process_update(cache_update)
-                cache_commit = cache_manager.build_commit(
-                        cache_update=cache_update)
-                for remote in self.get_active_managers():
-                    remote.send_commit(context, cache_commit)
-
-    def abort_tracked_claim(self, claim):
-        if not claim:
-            return
-        tracked_claim = self.claim_records.pop(claim.seed)
-        if tracked_claim:
-            LOG.info(_LI("Compute claim failed: %s") % claim)
-            self.host_state.process_claim(tracked_claim, apply_claim=False)
-            context = nova.context.get_admin_context()
-            for remote in self.get_active_managers():
-                remote.reply_claim(context, tracked_claim, False, force=True)
-        else:
-            LOG.warn(_LW("Unrecognized compute claim: %s (May be caused by "
-                         "resource tracker abort)") % claim)
-        return tracked_claim
+        remote_obj.reply_claim(context, claim, False)
+        claim.seed = -1
 
     def handle_rt_claim_failure(self, claim, func, *args, **kwargs):
+        # Make sure the claim is replied and only once
+        context = args[1]
         try:
             ret = func(*args, **kwargs)
-            return ret
         except exception.ComputeResourcesUnavailable as e:
-            self.abort_tracked_claim(claim)
+            # failed, abort claim
+            self._reject_claim(context, claim)
             raise e
         except Exception as e:
-            LOG.warn(_LW("Catched an unexpected exception %s, abort claim!")
-                     % e)
-            self.abort_tracked_claim(claim)
+            LOG.error(_LW("Caught an unexpected exception (%s). It is a bug, "
+                          "abort claim!") % e)
+            self._reject_claim(context, claim)
             raise e
+        else:
+            self._accept_claim(context, claim)
+            return ret

@@ -201,8 +201,12 @@ class ResourceTracker(object):
                   "MB", {'flavor': instance_ref.memory_mb,
                           'overhead': overhead['memory_mb']})
 
-        claim = claims.Claim(context, instance_ref, self, self.compute_node,
-                             overhead=overhead, limits=limits)
+        # NOTE(CHANGE)
+        claim = self.scheduler_cachemanager.handle_rt_claim_failure(
+                scheduler_claim,
+                claims.Claim,
+                context, instance_ref, self, self.compute_node,
+                overhead=overhead, limits=limits)
 
         if self.pci_tracker:
             # NOTE(jaypipes): ComputeNode.pci_device_pools is set below
