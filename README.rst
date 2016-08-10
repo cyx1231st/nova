@@ -1,3 +1,47 @@
+Eventually consistent host state README
+=======================================
+
+It introduces a new scheduler host manager driver to apply an eventually
+consistent update model to scheduler host states. It excludes the involvement
+of database during decision making like caching scheduler. But the scheduler
+caches are always *almost* up-to-date because they receive incremental updates
+directly from compute nodes, and the schedulers know whether or not their
+decisions are successful compute nodes. The throughput of this prototype
+implementation is boosted to at least *510%* compared with the legacy
+implementation in the same 1000-node simulation.
+
+To run and test this prototype, clone this repo in devstack and set
+`scheduler_host_manager=shared_host_manager` in "nova.conf". Do not forget to
+update "nova/nova.egg-info/entry_points.txt" according to the modified
+"setup.cfg". Also note: Multiple scheduler instances can only run on separate
+machines, and this prototype supports filter schedulers and caching schedulers
+running at the same time.
+
+To understand its whole design, the detailed specification is in
+https://review.openstack.org/#/c/306844/
+
+Performance evaluation in real OpenStack environment
+----------------------------------------------------
+
+A generic tool is implemented to evaluate the performance of filter scheduler,
+caching scheduler and this prototype in various configuations and in real
+OpenStack environment: https://github.com/cyx1231st/nova-scheduler-bench
+
+A very detailed performance analysis is made based on this tool to compare the
+performance with existing implementations. It is
+http://lists.openstack.org/pipermail/openstack-dev/2016-June/098202.html
+
+Performance modeling
+--------------------
+
+Another benchmarking tool is implemented to verify the general idea of this
+design by modeling the implementation:
+https://github.com/cyx1231st/placement-bench
+
+The detailed analysis about why it should have great improvement lies in
+http://lists.openstack.org/pipermail/openstack-dev/2016-March/087889.html
+
+
 OpenStack Nova README
 =====================
 
